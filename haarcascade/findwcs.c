@@ -84,8 +84,8 @@ int main(int argc, const char **argv)
 	char *next;
 	int wcount;
 
-	if (argc != 5) {
-		printf("%s", "Wrong arguments count.");
+	if (argc < 5) {
+		printf("%s", "Too few agruments.");
 		return 1;
 	}
 

@@ -84,8 +84,8 @@ int main(int argc, const char **argv)
 	char *next;
 
 
-	if (argc != 5) {
-		printf("%s\n", "Wrong argument count.");
+	if (argc < 5) {
+		printf("%s\n", "Too few arguments.");
 		return 1;
 	}
 
