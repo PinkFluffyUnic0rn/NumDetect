@@ -131,7 +131,7 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 				sx1y1 = scaledimg.data[imgy1
 					* scaledimg.w + imgx1];
 			
-				if (imgx0 < 0 && imgy0 < 0) {
+				if (imgx0 < 0 || imgy0 < 0) {
 					sx1y0 = (imgy0 >= 0)
 						? scaledimg.data[imgy0
 						* scaledimg.w + imgx1] : 0.0;

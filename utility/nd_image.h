@@ -1,6 +1,8 @@
 #ifndef ND_IMAGE_H
 #define ND_IMAGE_H
 
+#include "nd_vecmat.h"
+
 struct nd_image {
 	int w;
 	int h;
@@ -35,5 +37,10 @@ int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 
 int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg);
+
+int nd_getpersptransform(double *inpoints, double *outpoints,
+	struct nd_matrix3 *mr);
+
+int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m);
 
 #endif

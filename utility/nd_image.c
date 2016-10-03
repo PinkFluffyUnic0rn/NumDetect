@@ -7,6 +7,7 @@
 
 #include "nd_image.h"
 #include "nd_error.h"
+#include "nd_vecmat.h"
 
 int nd_imgcreate(struct nd_image *img, int w, int h, int chans)
 {
@@ -616,6 +617,7 @@ static double nd_linearinterpx(const struct nd_image *inimg, double x, int y)
 
 	return a * xr + b;
 }
+
 static double nd_linearinterp(const struct nd_image *inimg, double x, double y)
 {
 	double a, b;
@@ -632,7 +634,6 @@ static double nd_linearinterp(const struct nd_image *inimg, double x, double y)
 	yr = y - floor(y);
 	return a * yr + b;
 }
-
 
 int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg)
@@ -671,6 +672,108 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 				outimg->data[y * outimg->w + x]
 					= nd_linearinterp(inimg, inx, iny);
 			}
+
+	return 0;
+}
+
+int nd_getpersptransform(double *inpoints, double *outpoints,
+	struct nd_matrix3 *mr)
+{
+	struct nd_matrix3 a;
+	struct nd_matrix3 b;
+	struct nd_vector3 tmpv;
+	double r[3];
+
+	if (inpoints == NULL || outpoints == NULL || mr == NULL) {
+		nd_seterror(ND_INVALIDARG);
+		return (-1);
+	}
+
+	a._11 = inpoints[0 * 2 + 0];	a._12 = inpoints[1 * 2 + 0];
+		a._13 = inpoints[2 * 2 + 0];
+	a._21 = inpoints[0 * 2 + 1];	a._22 = inpoints[1 * 2 + 1];
+		a._23 = inpoints[2 * 2 + 1];
+	a._31 = 1.0;			a._32 = 1.0;
+		a._33 = 1.0;
+
+	tmpv.x = inpoints[3 * 2 + 0];
+	tmpv.y = inpoints[3 * 2 + 1];
+	tmpv.z = 1.0;
+
+	if (nd_m3nonhomsolve(&a, &tmpv, r) < 0)
+		return (-1);
+
+	a._11 *= r[0]; a._12 *= r[1]; a._13 *= r[2]; 
+	a._21 *= r[0]; a._22 *= r[1]; a._23 *= r[2]; 
+	a._31 *= r[0]; a._32 *= r[1]; a._33 *= r[2]; 
+
+	b._11 = outpoints[0 * 2 + 0];	b._12 = outpoints[1 * 2 + 0];
+		b._13 = outpoints[2 * 2 + 0];
+	b._21 = outpoints[0 * 2 + 1];	b._22 = outpoints[1 * 2 + 1];
+		b._23 = outpoints[2 * 2 + 1];
+	b._31 = 1.0;			b._32 = 1.0;
+		b._33 = 1.0;
+
+	tmpv.x = outpoints[3 * 2 + 0];
+	tmpv.y = outpoints[3 * 2 + 1];
+	tmpv.z = 1.0;
+
+	if (nd_m3nonhomsolve(&b, &tmpv, r) < 0)
+		return (-1);
+	
+	b._11 *= r[0]; b._12 *= r[1]; b._13 *= r[2]; 
+	b._21 *= r[0]; b._22 *= r[1]; b._23 *= r[2]; 
+	b._31 *= r[0]; b._32 *= r[1]; b._33 *= r[2]; 
+
+	if (nd_m3inverse(&b, &b) < 0)
+		return (-1);
+
+	nd_m3mult(&a, &b, mr);
+
+	return 0;
+}
+
+int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
+{
+	int x, y;
+	double *newdata;
+
+	if (img == NULL || m == NULL) {
+		nd_seterror(ND_INVALIDARG);
+		return (-1);
+	}
+
+	if (!nd_imgisvalid(img)) {
+		nd_seterror(ND_INVALIDIMAGE);
+		return (-1);
+	}
+
+	if ((newdata = malloc(sizeof(double) * img->w * img->h)) == NULL) {
+		nd_seterror(ND_ALLOCFAULT);
+		return (-1);
+	}
+
+	for (y = 0; y < img->h; ++y)
+		for (x = 0; x < img->w; ++x) {
+			struct nd_vector3 v;
+			double inx, iny;
+
+			v.x = (double) x;
+			v.y = (double) y;
+			v.z = 1.0;
+			
+			nd_v3m3mult(&v, m, &v);
+		
+			inx = v.x / v.z;
+			iny = v.y / v.z;
+
+			newdata[y * img->w + x] = (iny >= 0 && iny < img->h
+				&& inx >= 0 && inx < img->w)
+				? nd_linearinterp(img, inx, iny)
+				: 0.0;
+		}
+
+	img->data = newdata;
 
 	return 0;
 }

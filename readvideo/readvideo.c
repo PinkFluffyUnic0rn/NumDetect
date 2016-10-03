@@ -16,7 +16,7 @@
 #include "hc_hcascade.h"
 #include "hc_scanimgpyr.h"
 
-#define IMGWIDTH 1920
+#define IMGWIDTH 640
 
 struct gtkdata {
 	GtkWidget *mainwindow;
@@ -266,6 +266,38 @@ int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc)
 	return 0;
 }
 
+int persptransformframe(struct nd_image *frame)
+{
+	struct nd_matrix3 m;
+	double inpoints[8];
+	double outpoints[8];
+
+	inpoints[0] = 305; inpoints[1] = 242;
+	inpoints[2] = 367; inpoints[3] = 257;
+	inpoints[4] = 367; inpoints[5] = 272;
+	inpoints[6] = 305; inpoints[7] = 255;
+
+	outpoints[0] = 100 + frame->w / 2 - 4 * 31 / 3;
+	outpoints[1] = 100 + frame->h / 2 - 4 * 7 / 3;
+	
+	outpoints[2] = 100 + frame->w / 2 + 4 * 31 / 3;
+	outpoints[3] = 100 + frame->h / 2 - 4 * 7 / 3;
+	
+	outpoints[4] = 100 + frame->w / 2 + 4 * 31 / 3;
+	outpoints[5] = 100 + frame->h / 2 + 4 * 7 / 3;
+	
+	outpoints[6] = 100 + frame->w / 2 - 4 * 31 / 3;
+	outpoints[7] = 100 + frame->h / 2 + 4 * 7 / 3;
+
+	if (nd_getpersptransform(inpoints, outpoints, &m) < 0)
+		return (-1);
+
+	if (nd_imgapplytransform(frame, &m) < 0)
+		return (-1);
+
+	return 0;
+}
+
 void *decodeframetoimg(void *ud)
 {
 	struct alldata *data;
@@ -311,12 +343,14 @@ void *decodeframetoimg(void *ud)
 					/ 3.0 / 255.0;
 			}
 
+		if (persptransformframe(&(data->hc.img)) < 0)
+			abort();
+
 		imgpyramidscan(&(data->hc.hc), &(data->hc.img), &r, &rc,
 			&(data->hc.scanconf));
 
 		if (rc > 0)
 			printf("found!\n");
-
 
 		if (rc) {
 			detectedtofile(&(data->hc.img), r, rc);
@@ -327,6 +361,7 @@ void *decodeframetoimg(void *ud)
 		gtk_widget_queue_draw(data->gui.mainwindow);
 	
 		data->hc.frameready = 1;
+
 	}
 
 	return NULL;
