@@ -773,6 +773,7 @@ int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
 				: 0.0;
 		}
 
+	free(img->data);
 	img->data = newdata;
 
 	return 0;

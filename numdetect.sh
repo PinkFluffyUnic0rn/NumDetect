@@ -1,6 +1,6 @@
 #!/bin/bash
 
-./scanimage $1 $2 $3
+./bin/scanimage $1 $2 $3
 
 if [ $? -ne 0 ]
 then

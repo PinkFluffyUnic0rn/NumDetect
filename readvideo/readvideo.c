@@ -36,7 +36,6 @@ struct hcdata {
 	struct nd_image img;
 	struct hc_scanconfig scanconf;
 	pthread_mutex_t framemutex;
-	int frameready;
 };
 
 struct alldata {
@@ -192,17 +191,13 @@ int draw(GtkWidget *wgt, cairo_t *cr, gpointer data)
 
 	pthread_mutex_lock(&(hcd->framemutex));
 			
-	if (hcd->frameready) {
-		imgtocairosur(&(hcd->img), &sur);
-
-		cairo_set_source_surface(cr, sur, 0, 0);
-		cairo_paint(cr);
-
-		cairo_surface_destroy(sur);
+	imgtocairosur(&(hcd->img), &sur);
 		
-		hcd->frameready = 0;
-	}
-	
+	cairo_set_source_surface(cr, sur, 0, 0);
+	cairo_paint(cr);
+
+	cairo_surface_destroy(sur);
+		
 	pthread_mutex_unlock(&(hcd->framemutex));
 
 	return 0;
@@ -258,12 +253,62 @@ int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc)
 				abs(r[rn].y1 - r[rn].y0), &imginwin);
 			
 			nd_imgwrite(imgpath, &imginwin);
+			nd_imgdestroy(&imginwin);
 		}
 	}
 
 	++foundn;
 
 	return 0;
+}
+
+void *scanframe(void *ud)
+{
+	struct alldata *data;
+	struct hc_rect *r;
+	int rc;
+
+	data = ud;
+
+	while (1) {
+		struct nd_image img;
+
+		pthread_mutex_lock(&(data->hc.framemutex));
+	
+		nd_imgcreate(&img, data->hc.img.w, data->hc.img.h,
+			data->hc.img.chans);
+		memcpy(img.data, data->hc.img.data,
+			sizeof(double) * data->hc.img.w * data->hc.img.h);
+	
+		pthread_mutex_unlock(&(data->hc.framemutex));
+
+/*	
+		struct timespec ts, te;
+		clock_gettime(CLOCK_REALTIME, &ts);
+*/
+
+		imgpyramidscan(&(data->hc.hc), &img, &r, &rc,
+			&(data->hc.scanconf));
+		
+
+/*		clock_gettime(CLOCK_REALTIME, &te);
+
+		printf("%lf\n", (te.tv_sec - ts.tv_sec)
+			+ (te.tv_nsec - ts.tv_nsec) * 1e-9);
+*/
+
+		if (rc > 0)
+			printf("found!\n");
+
+		if (rc) {
+			detectedtofile(&img, r, rc);
+			free(r);
+		}
+		
+		nd_imgdestroy(&img);
+	}
+
+	return NULL;
 }
 
 int persptransformframe(struct nd_image *frame)
@@ -298,33 +343,17 @@ int persptransformframe(struct nd_image *frame)
 	return 0;
 }
 
-void *decodeframetoimg(void *ud)
+void *decodeframe(void *ud)
 {
 	struct alldata *data;
 	int isdecoded;
 	uint8_t *rgbdata;
 	int rgblinesize;
 	int x, y;
-	struct hc_rect *r;
-	int rc;
 
 	data = ud;
 
 	while (1) {
-		int state;
-
-		state = 1;
-		while (state) {
-			pthread_mutex_lock(&(data->hc.framemutex));
-			
-			if (!data->hc.frameready)
-				state = 0;
-			
-			pthread_mutex_unlock(&(data->hc.framemutex));
-		}
-		
-		isdecoded = 0;
-
 		do {
 			readframe(data->av.s, data->av.vcodecc, data->av.vstreamid,
 				data->av.frame, &(isdecoded));
@@ -334,6 +363,8 @@ void *decodeframetoimg(void *ud)
 			&rgbdata, &rgblinesize) < 0)
 			abort();
 
+		pthread_mutex_lock(&(data->hc.framemutex));
+		
 		for (y = 0; y < data->hc.img.h; ++y)
 			for(x = 0; x < data->hc.img.w; ++x) {
 				data->hc.img.data[y * data->hc.img.w + x]
@@ -346,22 +377,11 @@ void *decodeframetoimg(void *ud)
 		if (persptransformframe(&(data->hc.img)) < 0)
 			abort();
 
-		imgpyramidscan(&(data->hc.hc), &(data->hc.img), &r, &rc,
-			&(data->hc.scanconf));
-
-		if (rc > 0)
-			printf("found!\n");
-
-		if (rc) {
-			detectedtofile(&(data->hc.img), r, rc);
-			free(r);
-		}
-
-		free(rgbdata);	
-		gtk_widget_queue_draw(data->gui.mainwindow);
+		pthread_mutex_unlock(&(data->hc.framemutex));
 	
-		data->hc.frameready = 1;
-
+		free(rgbdata);	
+	
+		gtk_widget_queue_draw(data->gui.mainwindow);
 	}
 
 	return NULL;
@@ -418,11 +438,15 @@ int main(int argc, char **argv)
 	initgui(&(data.gui), &(data.hc));	
 
 	pthread_t decodethread;
+	pthread_t scanthread;
 	 
 	if (pthread_mutex_init(&(data.hc.framemutex), NULL))
 		abort();
 
-	if (pthread_create(&decodethread, NULL, decodeframetoimg, &data))
+	if (pthread_create(&decodethread, NULL, decodeframe, &data))
+		abort();
+
+	if (pthread_create(&scanthread, NULL, scanframe, &data))
 		abort();
 
 	gtk_window_resize(GTK_WINDOW(data.gui.mainwindow),

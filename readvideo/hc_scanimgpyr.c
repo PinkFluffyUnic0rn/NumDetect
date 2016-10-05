@@ -79,12 +79,16 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		if (nd_imgscalebilinear(img, d, d, &scaledimg) < 0)
 			return (-1);
 
-		if (scaledimg.w < hc->ww || scaledimg.h < hc->wh)
+		if (scaledimg.w < hc->ww || scaledimg.h < hc->wh) {
+			nd_imgdestroy(&scaledimg);
 			break;
+		}
 
 		if (nd_imgcreate(&scaledimgsq, scaledimg.w, scaledimg.h, 1)
-			< 0)
+			< 0) {
+			nd_imgdestroy(&scaledimg);
 			return (-1);
+		}
 	
 		for (y = 0; y < scaledimgsq.h; ++y)
 			for (x = 0; x < scaledimgsq.w; ++x) {
@@ -93,15 +97,27 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 					* scaledimg.data[y * scaledimg.w + x];
 		}
 
-		if (hc_imgintegral(&scaledimg) < 0)
+		if (hc_imgintegral(&scaledimg) < 0) {
+			nd_imgdestroy(&scaledimg);
+			nd_imgdestroy(&scaledimgsq);
+		
 			return (-1);
+		}
 
-		if (hc_imgintegral(&scaledimgsq) < 0)
+		if (hc_imgintegral(&scaledimgsq) < 0) {
+			nd_imgdestroy(&scaledimg);
+			nd_imgdestroy(&scaledimgsq);
+		
 			return (-1);
+		}
 		
 		if ((sd = malloc(sizeof(double) * scaledimg.h * scaledimg.w))
-			== NULL)
+			== NULL) {
+			nd_imgdestroy(&scaledimg);
+			nd_imgdestroy(&scaledimgsq);		
+		
 			return (-1);
+		}
 
 		for (y = 0; y < scaledimg.h - hc->wh; y += 1)
 			for (x = 0; x < scaledimg.w - hc->ww; x += 1) {
@@ -180,8 +196,14 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 			}
 
 		prevrc = rc;
-		if (fastimgscan(&scaledimg, sd, hc, &r, &rc, &rmax, conf) < 0)
+		if (fastimgscan(&scaledimg, sd, hc, &r, &rc, &rmax, conf)
+			< 0) {
+			free(sd);
+			nd_imgdestroy(&scaledimg);
+			nd_imgdestroy(&scaledimgsq);
+			
 			return -1;
+		}
 	
 		for (rn = prevrc; rn < rc; ++rn) {
 			r[rn].x0 /= d;
@@ -190,10 +212,9 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 			r[rn].y1 /= d;
 		}
 
-		free(sd);
-
 		d *= 0.9;
-
+		
+		free(sd);
 		nd_imgdestroy(&scaledimg);
 		nd_imgdestroy(&scaledimgsq);
 	} while (1);
