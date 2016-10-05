@@ -14,7 +14,7 @@
 
 #include "hc_scanimgpyr.h"
 
-static int fastimgscan(struct nd_image *img, double *sd,
+static int nd_fastimgscan(struct nd_image *img, double *sd,
 	struct hc_hcascade *hc, struct hc_rect **r, int *roffset, int *rmax,
 	const struct hc_scanconfig *conf)
 {
@@ -53,7 +53,7 @@ static int fastimgscan(struct nd_image *img, double *sd,
 	return 0;
 }
 
-int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
+int nd_imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 	struct hc_rect **newr, int *newrc, const struct hc_scanconfig *conf)
 {
 	double d;
@@ -196,7 +196,7 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 			}
 
 		prevrc = rc;
-		if (fastimgscan(&scaledimg, sd, hc, &r, &rc, &rmax, conf)
+		if (nd_fastimgscan(&scaledimg, sd, hc, &r, &rc, &rmax, conf)
 			< 0) {
 			free(sd);
 			nd_imgdestroy(&scaledimg);
@@ -219,10 +219,7 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		nd_imgdestroy(&scaledimgsq);
 	} while (1);
 	
-	if (rc <= 0)
-		return (-1);
-
-	if (hc_conrect(r, rc, newr, newrc) < 0)
+	if (rc > 0 && hc_conrect(r, rc, newr, newrc) < 0)
 		return (-1);
 
 	return 0;

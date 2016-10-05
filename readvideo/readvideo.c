@@ -21,7 +21,6 @@
 struct gtkdata {
 	GtkWidget *mainwindow;
 	GtkWidget *drawarea;
-	guint timer;
 };
 
 struct avdata {
@@ -36,12 +35,14 @@ struct hcdata {
 	struct nd_image img;
 	struct hc_scanconfig scanconf;
 	pthread_mutex_t framemutex;
+	int continuescan;
 };
 
 struct alldata {
 	struct gtkdata gui;
 	struct avdata av;
 	struct hcdata hc;
+	char *outputdir;
 };
 
 int imgtocairosur(const struct nd_image *img, cairo_surface_t **sur)
@@ -188,17 +189,26 @@ int draw(GtkWidget *wgt, cairo_t *cr, gpointer data)
 	cairo_surface_t *sur;
 	
 	hcd = data;
-
-	pthread_mutex_lock(&(hcd->framemutex));
+	
+	if (pthread_mutex_lock(&(hcd->framemutex))) {
+		perror("pthread_mutex_lock: ");
+		return 1;
+	}
 			
-	imgtocairosur(&(hcd->img), &sur);
+	if (imgtocairosur(&(hcd->img), &sur))
+		return 1;
+
+	if (pthread_mutex_unlock(&(hcd->framemutex))) {
+		cairo_surface_destroy(sur);
+
+		perror("pthread_mutex_unlock: ");
+		return 1;
+	}
 		
 	cairo_set_source_surface(cr, sur, 0, 0);
 	cairo_paint(cr);
 
 	cairo_surface_destroy(sur);
-		
-	pthread_mutex_unlock(&(hcd->framemutex));
 
 	return 0;
 }
@@ -207,34 +217,53 @@ int frametorgb(AVFrame *frame, int rgbw, int rgbh, uint8_t **rgbdata,
 	int *rgblinesize)
 {
 	struct SwsContext *swsc;
-
+	
 	if ((swsc = sws_getContext(frame->width, frame->height, frame->format,
 		rgbw, rgbh, AV_PIX_FMT_RGB24, SWS_BICUBIC, NULL, NULL, NULL))
 		== NULL)
 		return (-1);
 	
-	*rgbdata = malloc(sizeof(uint8_t) * rgbw * rgbh * 3);
+	if ((*rgbdata = malloc(sizeof(uint8_t) * rgbw * rgbh * 3)) == NULL) {
+		printf("Cannot allocate memory.\n");
+		return (-1);
+	}
+
 	*rgblinesize = rgbw * 3;
 
-	sws_scale(swsc, (const uint8_t **) frame->data, frame->linesize,
-		0, frame->height, rgbdata, rgblinesize);
+	if (sws_scale(swsc, (const uint8_t **) frame->data, frame->linesize,
+		0, frame->height, rgbdata, rgblinesize) <= 0)
+		return (-1);
 
 	sws_freeContext(swsc);
-
+	
 	return 0;
 }
 
-int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc)
+
+int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc,
+	const char *outputdir)
 {
 	char imgpath[255];
 	static int foundn = 0;
 	int rn;
 
-	sprintf(imgpath, "%s/%d.png", "res/orig", foundn);
-	nd_imgwrite(imgpath, img);
+	if (sprintf(imgpath, "%s/%d.png", outputdir, foundn) < 0) {
+		fprintf(stderr, "sprintf: %s.\n", strerror(errno));
+		return (-1);
+	}
+	
+	if (nd_imgwrite(imgpath, img) < 0) {
+		fprintf(stderr, "nd_imgwrite: %s.\n",
+			nd_strerror(nd_error));
+		return (-1);
+	}
 	
 	for (rn = 0; rn < rc; ++rn) {
-		sprintf(imgpath, "%s/%d_%d.png", "res", foundn, rn);
+		if (sprintf(imgpath, "%s/%d_%d.png", outputdir, foundn, rn)
+			< 0) {
+			fprintf(stderr, "sprintf: %s.\n", strerror(errno));
+			return (-1);
+		}
 		
 		double rh = abs(r[rn].y0 - r[rn].y1);
 
@@ -244,15 +273,31 @@ int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc)
 		if (r[rn].y0 >= 0 && r[rn].y1 < img->h) {
 			struct nd_image imginwin;
 
-			nd_imgcreate(&imginwin, abs(r[rn].x1 - r[rn].x0),
-				abs(r[rn].y1 - r[rn].y0), img->chans);
+			if (nd_imgcreate(&imginwin, abs(r[rn].x1 - r[rn].x0),
+				abs(r[rn].y1 - r[rn].y0), img->chans) < 0) {
+				fprintf(stderr, "nd_imgcreate: %s.\n",
+					nd_strerror(nd_error));
+				return (-1);
+			}
 			
-			nd_imgcrop(img,
-				r[rn].x0, r[rn].y0,
+			if (nd_imgcrop(img, r[rn].x0, r[rn].y0,
 				abs(r[rn].x1 - r[rn].x0),
-				abs(r[rn].y1 - r[rn].y0), &imginwin);
+				abs(r[rn].y1 - r[rn].y0), &imginwin) < 0) {
+				nd_imgdestroy(&imginwin);
+				
+				fprintf(stderr, "nd_imgcrop: %s.\n",
+					nd_strerror(nd_error));
+				return (-1);
+			}
 			
-			nd_imgwrite(imgpath, &imginwin);
+			if (nd_imgwrite(imgpath, &imginwin) < 0) {
+				nd_imgdestroy(&imginwin);
+				
+				fprintf(stderr, "nd_imgwrite: %s.\n",
+					nd_strerror(nd_error));
+				return (-1);
+			}
+
 			nd_imgdestroy(&imginwin);
 		}
 	}
@@ -273,35 +318,52 @@ void *scanframe(void *ud)
 	while (1) {
 		struct nd_image img;
 
-		pthread_mutex_lock(&(data->hc.framemutex));
+		if (pthread_mutex_lock(&(data->hc.framemutex))) {
+			perror("pthread_mutex_lock: ");
+			return NULL;
+		}
 	
-		nd_imgcreate(&img, data->hc.img.w, data->hc.img.h,
-			data->hc.img.chans);
+		if (!(data->hc.continuescan))
+			return NULL;
+
+		if (nd_imgcreate(&img, data->hc.img.w, data->hc.img.h,
+			data->hc.img.chans) < 0) {
+			fprintf(stderr, "nd_imgcreate: %s.\n",
+				nd_strerror(nd_error));
+		}
+
 		memcpy(img.data, data->hc.img.data,
 			sizeof(double) * data->hc.img.w * data->hc.img.h);
 	
-		pthread_mutex_unlock(&(data->hc.framemutex));
+		if (pthread_mutex_unlock(&(data->hc.framemutex))) {
+			nd_imgdestroy(&img);
 
-/*	
+			perror("pthread_mutex_unlock: ");
+			return NULL;
+		}
+/*
 		struct timespec ts, te;
 		clock_gettime(CLOCK_REALTIME, &ts);
 */
-
-		imgpyramidscan(&(data->hc.hc), &img, &r, &rc,
-			&(data->hc.scanconf));
+		if (nd_imgpyramidscan(&(data->hc.hc), &img, &r, &rc,
+			&(data->hc.scanconf)) < 0) {
+			nd_imgdestroy(&img);
+			
+			fprintf(stderr, "nd_imgpyramidscan: %s.\n",
+				nd_strerror(nd_error));
+		}
 		
-
-/*		clock_gettime(CLOCK_REALTIME, &te);
-
+/*
+		clock_gettime(CLOCK_REALTIME, &te);
 		printf("%lf\n", (te.tv_sec - ts.tv_sec)
 			+ (te.tv_nsec - ts.tv_nsec) * 1e-9);
 */
-
+/*
 		if (rc > 0)
 			printf("found!\n");
-
+*/
 		if (rc) {
-			detectedtofile(&img, r, rc);
+			detectedtofile(&img, r, rc, data->outputdir);
 			free(r);
 		}
 		
@@ -334,14 +396,21 @@ int persptransformframe(struct nd_image *frame)
 	outpoints[6] = 100 + frame->w / 2 - 4 * 31 / 3;
 	outpoints[7] = 100 + frame->h / 2 + 4 * 7 / 3;
 
-	if (nd_getpersptransform(inpoints, outpoints, &m) < 0)
+	if (nd_getpersptransform(inpoints, outpoints, &m) < 0) {
+		fprintf(stderr, "nd_getpersptransform: %s.\n",
+			nd_strerror(nd_error));
 		return (-1);
+	}
 
-	if (nd_imgapplytransform(frame, &m) < 0)
+	if (nd_imgapplytransform(frame, &m) < 0) {
+		fprintf(stderr, "nd_imgapplytransform: %s.\n",
+			nd_strerror(nd_error));
 		return (-1);
+	}
 
 	return 0;
 }
+
 
 void *decodeframe(void *ud)
 {
@@ -355,15 +424,20 @@ void *decodeframe(void *ud)
 
 	while (1) {
 		do {
-			readframe(data->av.s, data->av.vcodecc, data->av.vstreamid,
-				data->av.frame, &(isdecoded));
+			if (readframe(data->av.s, data->av.vcodecc,
+				data->av.vstreamid, data->av.frame,
+				&(isdecoded)) < 0)
+				return NULL;
 		} while (!isdecoded);
 
 		if (frametorgb(data->av.frame, data->hc.img.w, data->hc.img.h,
 			&rgbdata, &rgblinesize) < 0)
-			abort();
+			continue;
 
-		pthread_mutex_lock(&(data->hc.framemutex));
+		if (pthread_mutex_lock(&(data->hc.framemutex))) {
+			perror("pthread_mutex_lock: ");
+			return NULL;
+		}
 		
 		for (y = 0; y < data->hc.img.h; ++y)
 			for(x = 0; x < data->hc.img.w; ++x) {
@@ -375,13 +449,16 @@ void *decodeframe(void *ud)
 			}
 
 		if (persptransformframe(&(data->hc.img)) < 0)
-			abort();
+			return NULL;
 
-		pthread_mutex_unlock(&(data->hc.framemutex));
-	
+		if (pthread_mutex_unlock(&(data->hc.framemutex))) {
+			perror("pthread_mutex_unlock: ");
+			return NULL;
+		}
+		
 		free(rgbdata);	
-	
-		gtk_widget_queue_draw(data->gui.mainwindow);
+		
+//		gtk_widget_queue_draw(data->gui.mainwindow);
 	}
 
 	return NULL;
@@ -411,52 +488,68 @@ int initgui(struct gtkdata *guidata, struct hcdata *hcd)
 int main(int argc, char **argv)
 {
 	struct alldata data;
-
+	pthread_t decodethread;
+	pthread_t scanthread;
+	 
 	av_register_all();
 	avformat_network_init();
 
 	if (openinput(&(data.av.s), argv[1], &(data.av.vstreamid)) < 0)
-		abort();
+		return 1;
 	
 	if (openvideocodec(data.av.s, &(data.av.vcodecc),
 		data.av.vstreamid) < 0)
-		abort();
+		return 1;
 
 	data.av.frame = av_frame_alloc();
 
-	nd_imgcreate(&(data.hc.img), IMGWIDTH, data.av.vcodecc->height
-		* IMGWIDTH / data.av.vcodecc->width, 1);
+	if (nd_imgcreate(&(data.hc.img), IMGWIDTH, data.av.vcodecc->height
+		* IMGWIDTH / data.av.vcodecc->width, 1) < 0) {
+		fprintf(stderr, "nd_imgcreate: %s.\n", nd_strerror(nd_error));
+		return 1;
+	}
 
-	hc_hcascaderead(&(data.hc.hc), argv[2]);
+	if (hc_hcascaderead(&(data.hc.hc), argv[2]) < 0) {
+		fprintf(stderr, "nd_hcascaderead: %s.\n",
+			nd_strerror(nd_error));
+		return 1;
+	}
 
 	data.hc.scanconf.scalestep = 0.9;
 	data.hc.scanconf.winhstep = 1;
 	data.hc.scanconf.winwstep = 1;
+
+	data.hc.continuescan = 1;
+
+//	gtk_init(&argc, &argv);
+
+//	initgui(&(data.gui), &(data.hc));	
+
+	data.outputdir = argv[3];
 	
-	gtk_init(&argc, &argv);
-
-	initgui(&(data.gui), &(data.hc));	
-
-	pthread_t decodethread;
-	pthread_t scanthread;
-	 
 	if (pthread_mutex_init(&(data.hc.framemutex), NULL))
-		abort();
+		return 1;
 
 	if (pthread_create(&decodethread, NULL, decodeframe, &data))
-		abort();
+		return 1;
 
 	if (pthread_create(&scanthread, NULL, scanframe, &data))
-		abort();
-
+		return 1;
+/*
 	gtk_window_resize(GTK_WINDOW(data.gui.mainwindow),
 		data.hc.img.w, data.hc.img.h);
+*/
 
-	gtk_main();
+//	gtk_main();
 
 	if (pthread_join(decodethread, NULL))
-		abort();
+		return 1;
+	
+	data.hc.continuescan = 0;
 
+	if (pthread_join(scanthread, NULL))
+		return 1;
+	
 	av_frame_unref(data.av.frame);
 	avcodec_free_context(&(data.av.vcodecc));
 	avformat_close_input(&(data.av.s));
