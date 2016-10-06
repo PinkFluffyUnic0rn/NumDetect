@@ -639,6 +639,7 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg)
 {
 	int x, y, nchan;
+	struct nd_image tmpimg;
 
 	if (inimg == NULL || hrel <= 0.0 || wrel <= 0.0
 		|| outimg == NULL) {
@@ -651,27 +652,32 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 		return (-1);
 	}
 
-	outimg->w = ceil(wrel * inimg->w);	
-	outimg->h = ceil(hrel * inimg->h);
-	outimg->chans = inimg->chans;
+	tmpimg.w = ceil(wrel * inimg->w);	
+	tmpimg.h = ceil(hrel * inimg->h);
+	tmpimg.chans = inimg->chans;
 
-	if ((outimg->data = malloc(sizeof(double) * outimg->w * outimg->h
-		* outimg->chans)) == NULL) {
+	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h
+		* tmpimg.chans)) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
 
-	for (y = 0; y < outimg->h; ++y)
-		for (x = 0; x < outimg->w; ++x) 
+	for (y = 0; y < tmpimg.h; ++y)
+		for (x = 0; x < tmpimg.w; ++x) 
 			for (nchan = 0; nchan < inimg->chans; ++nchan) {
 				double iny, inx;
 	
 				iny = ((double) y) / hrel;
 				inx = ((double) x) / wrel;
 				
-				outimg->data[y * outimg->w + x]
+				tmpimg.data[y * tmpimg.w + x]
 					= nd_linearinterp(inimg, inx, iny);
 			}
+
+	outimg->w = tmpimg.w;
+	outimg->h = tmpimg.h;
+	outimg->chans = tmpimg.chans;
+	outimg->data = tmpimg.data;
 
 	return 0;
 }

@@ -25,8 +25,6 @@ int main(int argc, char **argv)
 
 	int rn;
 	
-	time_t t;
-
 	if (hc_hcascaderead(&hc, argv[1]) < 0) {
 		fprintf(stderr, "hc_hcascaderead: %s.\n",
 			argv[1]);
@@ -48,12 +46,15 @@ int main(int argc, char **argv)
 	scanconf.winhstep = 1;
 	scanconf.winwstep = 1;
 
-	t = time(0);
+	struct timespec ts, te;
+	clock_gettime(CLOCK_REALTIME, &ts);
 
 	imgpyramidscan(&hc, &img, &newr, &newrc, &scanconf);
 
-	printf("%lu\n", time(0) - t);
-	
+	clock_gettime(CLOCK_REALTIME, &te);
+	printf("%lf\n", te.tv_sec + te.tv_nsec * 1e-9
+		- (ts.tv_sec + ts.tv_nsec * 1e-9));
+
 	for (rn = 0; rn < newrc; ++rn) {
 		char a[255];
 

@@ -358,10 +358,10 @@ void *scanframe(void *ud)
 		printf("%lf\n", (te.tv_sec - ts.tv_sec)
 			+ (te.tv_nsec - ts.tv_nsec) * 1e-9);
 */
-/*
+
 		if (rc > 0)
 			printf("found!\n");
-*/
+
 		if (rc) {
 			detectedtofile(&img, r, rc, data->outputdir);
 			free(r);
@@ -411,6 +411,28 @@ int persptransformframe(struct nd_image *frame)
 	return 0;
 }
 
+int waitfortimestamp(AVRational *tbase, struct timespec *tstart,
+	struct timespec *tcur, int64_t *timestamp)
+{
+	double tcurd;
+	double tframed;
+
+	tcurd = (double) tbase->den / tbase->num * *timestamp;
+	tframed = (tcur->tv_sec - tstart->tv_sec)
+		+ (tcur->tv_nsec - tstart->tv_nsec) * 1.0e-9;
+
+	if (tcurd > tframed) {
+		struct timespec twait;
+		
+		twait.tv_sec = floor(tcurd) - floor(tframed);
+		twait.tv_nsec = ((tcurd - floor(tcurd))
+			- (tframed - floor(tframed))) * 1.0e9;
+
+		nanosleep(&twait, NULL);
+	}
+
+	return 0;
+}
 
 void *decodeframe(void *ud)
 {
@@ -419,8 +441,14 @@ void *decodeframe(void *ud)
 	uint8_t *rgbdata;
 	int rgblinesize;
 	int x, y;
+	struct timespec tstart;
+	struct timespec tcur;
+	int64_t timestamp;
 
 	data = ud;
+
+	clock_gettime(CLOCK_REALTIME, &tstart);
+	timestamp = 0;
 
 	while (1) {
 		do {
@@ -429,7 +457,7 @@ void *decodeframe(void *ud)
 				&(isdecoded)) < 0)
 				return NULL;
 		} while (!isdecoded);
-
+		
 		if (frametorgb(data->av.frame, data->hc.img.w, data->hc.img.h,
 			&rgbdata, &rgblinesize) < 0)
 			continue;
@@ -456,9 +484,15 @@ void *decodeframe(void *ud)
 			return NULL;
 		}
 		
-		free(rgbdata);	
+		free(rgbdata);
+
+		clock_gettime(CLOCK_REALTIME, &tcur);
+		waitfortimestamp(&(data->av.s->streams[data->av.vstreamid]
+			->avg_frame_rate), &tstart, &tcur, &timestamp);
 		
-//		gtk_widget_queue_draw(data->gui.mainwindow);
+		gtk_widget_queue_draw(data->gui.mainwindow);
+		
+		++timestamp;
 	}
 
 	return NULL;
@@ -521,9 +555,9 @@ int main(int argc, char **argv)
 
 	data.hc.continuescan = 1;
 
-//	gtk_init(&argc, &argv);
+	gtk_init(&argc, &argv);
 
-//	initgui(&(data.gui), &(data.hc));	
+	initgui(&(data.gui), &(data.hc));	
 
 	data.outputdir = argv[3];
 	
@@ -535,12 +569,11 @@ int main(int argc, char **argv)
 
 	if (pthread_create(&scanthread, NULL, scanframe, &data))
 		return 1;
-/*
+
 	gtk_window_resize(GTK_WINDOW(data.gui.mainwindow),
 		data.hc.img.w, data.hc.img.h);
-*/
 
-//	gtk_main();
+	gtk_main();
 
 	if (pthread_join(decodethread, NULL))
 		return 1;

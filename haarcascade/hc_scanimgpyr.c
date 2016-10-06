@@ -110,7 +110,7 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		
 			return (-1);
 		}
-			
+
 		if ((sd = malloc(sizeof(double) * scaledimg.h * scaledimg.w))
 			== NULL) {
 			nd_imgdestroy(&scaledimg);
@@ -118,6 +118,7 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		
 			return (-1);
 		}
+
 
 		for (y = 0; y < scaledimg.h - hc->wh; y += 1)
 			for (x = 0; x < scaledimg.w - hc->ww; x += 1) {
@@ -212,9 +213,8 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 			r[rn].y1 /= d;
 		}
 
-
-		d *= 0.9;
-
+		d *= conf->scalestep;
+		
 		free(sd);
 		nd_imgdestroy(&scaledimg);
 		nd_imgdestroy(&scaledimgsq);
