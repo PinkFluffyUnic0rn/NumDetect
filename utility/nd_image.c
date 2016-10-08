@@ -319,7 +319,7 @@ int nd_imggrayscale(struct nd_image *img)
 
 	return 0;
 }
-
+/*
 int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 {
 	int npix;
@@ -367,6 +367,44 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 
 	}
 
+	return 0;
+}
+*/
+
+int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
+{
+	double avr;
+	double sd;
+	int npix;
+
+	if (img == NULL) {
+		nd_seterror(ND_INVALIDARG);
+		return (-1);
+	}
+
+	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
+		nd_seterror(ND_INVALIDIMAGE);
+		return (-1);
+	}
+
+	avr = 0.0;
+	for (npix = 0; npix < img->w * img->h; ++npix)
+		avr += img->data[npix];
+	avr /= (double) (img->w * img->h);
+
+	sd = 0.0;	
+	for (npix = 0; npix < img->w * img->h; ++npix)
+		sd += pow(img->data[npix] - avr, 2.0);
+	sd = sqrt(sd / (double) (img->w * img->h));
+
+	if (normavr)
+		for (npix = 0; npix < img->w * img->h; ++npix)
+			img->data[npix] -= avr;
+	
+	if (normdev)
+		for (npix = 0; npix < img->w * img->h; ++npix)
+			img->data[npix] /= sd;
+	
 	return 0;
 }
 

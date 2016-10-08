@@ -121,7 +121,7 @@ int checkline(struct nd_image *img, double rho, double theta,
 
 	if ((lo == LO_LEFT || lo == LO_RIGHT)
 		&& !(theta > M_PI * 0.25 && theta < M_PI * 0.75)) {	
-
+/*
 		double vbandlen;
 		double sumborder;
 		double suminner;
@@ -135,7 +135,7 @@ int checkline(struct nd_image *img, double rho, double theta,
 			rho + vbandlen * 2.0 + 0.01, theta);
 
 		return (sumborder > suminner) ? 1 : 0;
-/*
+*/
 		double vbandlen = img->w * 0.125;
 		double valdif;
 		double sumborder;
@@ -157,8 +157,6 @@ int checkline(struct nd_image *img, double rho, double theta,
 			valdif *= -1.0;
 
 		return valdif > 0.0;
-*/
-//		return 1;
 	}
 
 	return 0;
@@ -182,7 +180,14 @@ int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 
 	if (nd_imgnormalize(img, 1, 1) < 0)
 		return (-1);
+/*
+	int i, j;
+	for (i = 0; i < img->h; ++i)
+		for (j = 0; j < img->w; ++j)
+			if (!(img->data[i * img->w + j] > 0.0))
+				printf("%lf\n", img->data[i * img->w + j]);
 
+*/
 	if ((mask = malloc(sizeof(int) * img->w * img->h)) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
@@ -190,40 +195,7 @@ int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 
 	if (np_canny(img, mask, -1.0, -1.0) < 0)
 		return (-1);
-/*
-	if (1) {
-		int x, y;
-		struct nd_image test;
-		const char *path;
 
-		nd_imgcreate(&test, img->w, img->h, ND_PF_GRAYSCALE);
-	
-		for (y = 0; y < test.h; ++y)
-			for (x = 0; x < test.w; ++x)
-				test.data[y * test.w + x]
-					= mask[y * test.w + x];
-	
-		switch (lineorient) {
-		case LO_LEFT:
-			path = "left.png";
-			break;
-		case LO_RIGHT:
-			path = "right.png";
-			break;
-		case LO_TOP:
-			path = "top.png";
-			break;
-		case LO_BOTTOM:
-			path = "bottom.png";
-			break;
-		default:
-			path = NULL;
-			break;
-		}
-			
-		nd_imgwrite(&test, path);
-	}
-*/
 	if ((hlines = malloc(sizeof(double) * HOUGHMAXLINES * 2)) == NULL) {
 		safefree((void **)&mask);
 
@@ -340,8 +312,6 @@ int getparallel(double *lines1, int lines1count,
 				&& (i1 + i2 < minisum
 				|| (i1 + i2 == minisum
 				&& abs(i2 - i1) < minidif))) {
-//				fprintf(stderr, "!!! %f %f %f\n", lines1[i1 * 2], lines2[i2 * 2],
-//					fabs(lines1[i1 * 2] - lines2[i2 * 2]));
 				*li1 = i1;
 				*li2 = i2;
 				minisum = i1 + i2;
@@ -365,8 +335,11 @@ int main(int argc, char **argv)
 	struct lineseg lleft;
 	struct lineseg lright;
 	int li1, li2;
-	double rho, theta;	
-	double interx, intery;
+	double rho, theta;
+
+	struct nd_matrix3 m;
+	double inpoints[8];
+	double outpoints[8];
 
 // loading image
 	if (argc < 2) {
@@ -413,7 +386,6 @@ int main(int argc, char **argv)
 
 	getparallel(linestop, linescount, linesbot, linescount, &li1, &li2);
 
-//fprintf(stderr, "%d %d\n", li1, li2);	
 	theta = linestop[li1 * 2];
 	rho = linestop[li1 * 2 + 1];
 	
@@ -469,14 +441,9 @@ int main(int argc, char **argv)
 	imgfindlines(imgparts + 4, linesright, &linescount, LO_RIGHT);
 	
 	getparallel(linesleft, linescount, linesright, linescount, &li1, &li2);
-//	fprintf(stderr, "%d %d\n", li1, li2);
-
-//	li1 = 2;
-//	li2 = 4;
 
 	theta = linesleft[li1 * 2];
 	rho = linesleft[li1 * 2 + 1];
-//	fprintf(stderr, "%f ", theta);
 
 	if (theta < 0.00001) {	
 		lleft.x0 = rho;
@@ -494,7 +461,6 @@ int main(int argc, char **argv)
 	theta = linesright[li2 * 2];
 	rho = linesright[li2 * 2 + 1];
 
-//	fprintf(stderr, "%f\n", theta);
 	if (theta < 0.00001) {	
 		lright.x0 = rho;
 		lright.y0 = 0.0;
@@ -511,17 +477,29 @@ int main(int argc, char **argv)
 	lright.x0 += 4 * img.w / 5;
 	lright.x1 += 4 * img.w / 5;
 
-	lintersect(&lright, &lbot, &interx, &intery);
-	printf("%d %d\n", (int) ceil(interx), (int) ceil(intery));
+	lintersect(&lleft, &ltop, inpoints + 0, inpoints + 1);
+	lintersect(&lright, &ltop, inpoints + 2, inpoints + 3);
+	lintersect(&lright, &lbot, inpoints + 4, inpoints + 5);
+	lintersect(&lleft, &lbot, inpoints + 6, inpoints + 7);
 
-	lintersect(&lleft, &lbot, &interx, &intery);
-	printf("%d %d\n", (int) ceil(interx), (int) ceil(intery));
+	outpoints[0] = 0.0; outpoints[1] = 0.0;
+	outpoints[2] = img.w; outpoints[3] = 0.0;
+	outpoints[4] = img.w; outpoints[5] = img.h;
+	outpoints[6] = 0.0; outpoints[7] = img.h;
 
-	lintersect(&lright, &ltop, &interx, &intery);
-	printf("%d %d\n", (int) ceil(interx), (int) ceil(intery));
-	
-	lintersect(&lleft, &ltop, &interx, &intery);
-	printf("%d %d\n", (int) ceil(interx), (int) ceil(intery));
+	if (nd_getpersptransform(inpoints, outpoints, &m) < 0) {
+		fprintf(stderr, "nd_getpersptransform: %s.\n",
+			nd_strerror(nd_error));
+		return 1;
+	}
+
+	if (nd_imgapplytransform(&img, &m) < 0) {
+		fprintf(stderr, "nd_imgapplytransform: %s.\n",
+			nd_strerror(nd_error));
+		return 1;
+	}
+
+	nd_imgwrite(&img, argv[2]);
 
 	return 0;
 }

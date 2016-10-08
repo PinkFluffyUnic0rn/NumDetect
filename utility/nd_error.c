@@ -34,6 +34,9 @@ const char *nd_strerror(enum ND_ERROR err)
 	case ND_INVALIDIMAGE:
 		return "Image argument has wrong parameters";
 
+	case ND_INVALIDMATRIX:
+		return "Matrix argument has wrong parameters";
+
 	case ND_READFILEERROR:
 		return "Cannot read file";
 

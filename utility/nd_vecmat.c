@@ -246,7 +246,7 @@ int nd_m3nonhomsolve(const struct nd_matrix3 *m, const struct nd_vector3 *v,
 	memcpy(tmpV, v, sizeof(struct nd_vector3));
 
 	if (nd_chooseroworder3v(tmpM, tmpV) < 0) {
-		nd_seterror(ND_WRONGMATRIX);
+		nd_seterror(ND_INVALIDMATRIX);
 		return (-1);
 	}
 
@@ -387,7 +387,7 @@ int nd_m3inverse(const struct nd_matrix3 *m, struct nd_matrix3 *r)
 			invM[i][j] = (i == j) ? 1.0f : 0.0;
 
 	if (nd_chooseroworder3m(tmpM, invM) < 0) {
-		nd_seterror(ND_WRONGMATRIX);
+		nd_seterror(ND_INVALIDMATRIX);
 		return (-1);
 	}
 
