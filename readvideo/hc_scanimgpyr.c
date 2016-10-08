@@ -26,7 +26,7 @@ static int nd_fastimgscan(struct nd_image *img, double *sd,
 		for (x = 1; x < img->w - hc->ww; x += conf->winwstep) {
 			imginwin.w = hc->ww + 1;
 			imginwin.h = hc->wh + 1;
-			imginwin.chans = 1;
+			imginwin.format = ND_PF_GRAYSCALE;
 			imginwin.data = img->data + (y - 1) * img->w + (x - 1);
 
 			if (hc_fastimgclassify(hc, &imginwin,
@@ -76,16 +76,18 @@ int nd_imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		int prevrc;
 		int x, y;
 
-		if (nd_imgscalebilinear(img, d, d, &scaledimg) < 0)
+		if (nd_imgscalebilinear(img, d, d, &scaledimg) < 0) {
+		
 			return (-1);
+		}
 
 		if (scaledimg.w < hc->ww || scaledimg.h < hc->wh) {
 			nd_imgdestroy(&scaledimg);
 			break;
 		}
 
-		if (nd_imgcreate(&scaledimgsq, scaledimg.w, scaledimg.h, 1)
-			< 0) {
+		if (nd_imgcreate(&scaledimgsq, scaledimg.w, scaledimg.h,
+			img->format) < 0) {
 			nd_imgdestroy(&scaledimg);
 			return (-1);
 		}
@@ -202,10 +204,10 @@ int nd_imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 			free(sd);
 			nd_imgdestroy(&scaledimg);
 			nd_imgdestroy(&scaledimgsq);
-			
+
 			return -1;
 		}
-	
+		
 		for (rn = prevrc; rn < rc; ++rn) {
 			r[rn].x0 /= d;
 			r[rn].y0 /= d;

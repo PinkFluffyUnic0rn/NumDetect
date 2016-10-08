@@ -252,7 +252,7 @@ int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc,
 		return (-1);
 	}
 	
-	if (nd_imgwrite(imgpath, img) < 0) {
+	if (nd_imgwrite(img, imgpath) < 0) {
 		fprintf(stderr, "nd_imgwrite: %s.\n",
 			nd_strerror(nd_error));
 		return (-1);
@@ -274,7 +274,7 @@ int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc,
 			struct nd_image imginwin;
 
 			if (nd_imgcreate(&imginwin, abs(r[rn].x1 - r[rn].x0),
-				abs(r[rn].y1 - r[rn].y0), img->chans) < 0) {
+				abs(r[rn].y1 - r[rn].y0), img->format) < 0) {
 				fprintf(stderr, "nd_imgcreate: %s.\n",
 					nd_strerror(nd_error));
 				return (-1);
@@ -290,7 +290,7 @@ int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc,
 				return (-1);
 			}
 			
-			if (nd_imgwrite(imgpath, &imginwin) < 0) {
+			if (nd_imgwrite(&imginwin, imgpath) < 0) {
 				nd_imgdestroy(&imginwin);
 				
 				fprintf(stderr, "nd_imgwrite: %s.\n",
@@ -317,7 +317,7 @@ void *scanframe(void *ud)
 
 	while (1) {
 		struct nd_image img;
-
+	
 		if (pthread_mutex_lock(&(data->hc.framemutex))) {
 			perror("pthread_mutex_lock: ");
 			return NULL;
@@ -327,7 +327,7 @@ void *scanframe(void *ud)
 			return NULL;
 
 		if (nd_imgcreate(&img, data->hc.img.w, data->hc.img.h,
-			data->hc.img.chans) < 0) {
+			data->hc.img.format) < 0) {
 			fprintf(stderr, "nd_imgcreate: %s.\n",
 				nd_strerror(nd_error));
 		}
@@ -352,16 +352,15 @@ void *scanframe(void *ud)
 			fprintf(stderr, "nd_imgpyramidscan: %s.\n",
 				nd_strerror(nd_error));
 		}
-		
-/*
+/*		
 		clock_gettime(CLOCK_REALTIME, &te);
 		printf("%lf\n", (te.tv_sec - ts.tv_sec)
 			+ (te.tv_nsec - ts.tv_nsec) * 1e-9);
 */
-
+/*
 		if (rc > 0)
 			printf("found!\n");
-
+*/
 		if (rc) {
 			detectedtofile(&img, r, rc, data->outputdir);
 			free(r);
@@ -441,15 +440,16 @@ void *decodeframe(void *ud)
 	uint8_t *rgbdata;
 	int rgblinesize;
 	int x, y;
+/*
 	struct timespec tstart;
 	struct timespec tcur;
 	int64_t timestamp;
-
+*/
 	data = ud;
-
+/*
 	clock_gettime(CLOCK_REALTIME, &tstart);
 	timestamp = 0;
-
+*/
 	while (1) {
 		do {
 			if (readframe(data->av.s, data->av.vcodecc,
@@ -485,14 +485,14 @@ void *decodeframe(void *ud)
 		}
 		
 		free(rgbdata);
-
+/*
 		clock_gettime(CLOCK_REALTIME, &tcur);
 		waitfortimestamp(&(data->av.s->streams[data->av.vstreamid]
 			->avg_frame_rate), &tstart, &tcur, &timestamp);
-		
-		gtk_widget_queue_draw(data->gui.mainwindow);
-		
-		++timestamp;
+*/
+//		gtk_widget_queue_draw(data->gui.mainwindow);
+	
+//		++timestamp;
 	}
 
 	return NULL;
@@ -538,7 +538,7 @@ int main(int argc, char **argv)
 	data.av.frame = av_frame_alloc();
 
 	if (nd_imgcreate(&(data.hc.img), IMGWIDTH, data.av.vcodecc->height
-		* IMGWIDTH / data.av.vcodecc->width, 1) < 0) {
+		* IMGWIDTH / data.av.vcodecc->width, ND_PF_GRAYSCALE) < 0) {
 		fprintf(stderr, "nd_imgcreate: %s.\n", nd_strerror(nd_error));
 		return 1;
 	}
@@ -554,11 +554,11 @@ int main(int argc, char **argv)
 	data.hc.scanconf.winwstep = 1;
 
 	data.hc.continuescan = 1;
-
+/*
 	gtk_init(&argc, &argv);
 
 	initgui(&(data.gui), &(data.hc));	
-
+*/
 	data.outputdir = argv[3];
 	
 	if (pthread_mutex_init(&(data.hc.framemutex), NULL))
@@ -569,12 +569,12 @@ int main(int argc, char **argv)
 
 	if (pthread_create(&scanthread, NULL, scanframe, &data))
 		return 1;
-
+/*
 	gtk_window_resize(GTK_WINDOW(data.gui.mainwindow),
 		data.hc.img.w, data.hc.img.h);
 
 	gtk_main();
-
+*/
 	if (pthread_join(decodethread, NULL))
 		return 1;
 	

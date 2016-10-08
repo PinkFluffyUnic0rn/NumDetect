@@ -9,18 +9,42 @@
 #include "nd_error.h"
 #include "nd_vecmat.h"
 
-int nd_imgcreate(struct nd_image *img, int w, int h, int chans)
+int nd_imgisvalid(const struct nd_image *img)
+{
+	if (img->data == NULL || img->w <= 0 || img->h <= 0 || img->format < 0)
+		return 0;
+	else
+		return 1;
+}
+
+int nd_imgchanscount(enum ND_PIXELFORMAT format)
+{
+	switch (format) {
+	case ND_PF_GRAYSCALE:
+		return 1;
+	case ND_PF_RGB:
+		return 3;
+	case ND_PF_ARGB:
+		return 3;
+	default:
+		return (-1);
+	}
+}
+
+int nd_imgcreate(struct nd_image *img, int w, int h,
+	enum ND_PIXELFORMAT format)
 {
 	img->w = w;
 	img->h = h;
-	img->chans = chans;
+	img->format = format;
 
-	if (w <= 0 || h <= 0 || chans <= 0) {
+	if (w <= 0 || h <= 0 || format < 0) {
 		nd_seterror(ND_INVALIDARG);
 		return (-1);
 	}
 	
-	if ((img->data = malloc(sizeof(double) * w * h * chans)) == NULL) {
+	if ((img->data = malloc(sizeof(double) * w * h
+		* nd_imgchanscount(format))) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
@@ -28,28 +52,42 @@ int nd_imgcreate(struct nd_image *img, int w, int h, int chans)
 	return 0;
 }
 
+int nd_imgcopy(const struct nd_image *img1, struct nd_image *img2)
+{
+	img2->w = img1->w;
+	img2->h = img1->h;
+	img2->format = img1->format;
+
+	if (!nd_imgisvalid(img1)) {
+		nd_seterror(ND_INVALIDIMAGE);
+		return (-1);
+	}
+
+	if ((img2->data = malloc(sizeof(double) * img2->w * img2->h
+		* nd_imgchanscount(img2->format))) == NULL) {
+		nd_seterror(ND_ALLOCFAULT);
+		return (-1);
+	}
+
+	memcpy(img2->data, img1->data, sizeof(double) * img1->w * img1->h
+		* nd_imgchanscount(img1->format));
+
+	return 0;
+}
+
 int nd_imgdestroy(struct nd_image *img)
 {
-	img->w = img->h = img->chans = 0;
+	img->w = img->h = img->format = 0;
 
 	free(img->data);
 
 	return 0;
 }
 
-int nd_imgisvalid(const struct nd_image *img)
-{
-	if (img->data == NULL || img->w <= 0 || img->h <= 0 || img->chans <= 0)
-		return 0;
-	else
-		return 1;
-}
-
 int nd_imgread(const char *imgpath, struct nd_image *img)
 {
 	cairo_surface_t *sur;	
 	unsigned char *data;
-	int stride;
 	int pixsz;
 	int imgx, imgy, nchan;
 	
@@ -65,53 +103,42 @@ int nd_imgread(const char *imgpath, struct nd_image *img)
 		return (-1);
 	}
 	
-	if ((data = cairo_image_surface_get_data(sur)) == NULL) {
-		nd_seterror(ND_CAIROERROR);
-		return (-1);
-	}
-	
-	if ((img->w = cairo_image_surface_get_width(sur)) == 0) {
-		nd_seterror(ND_CAIROERROR);
-		return (-1);
-	}
-	if ((img->h = cairo_image_surface_get_height(sur)) == 0) {
-		nd_seterror(ND_CAIROERROR);
-		return (-1);
-	}
-
-	if ((stride = cairo_image_surface_get_stride(sur)) == 0) {
-		nd_seterror(ND_CAIROERROR);
-		return (-1);
-	}
+	data = cairo_image_surface_get_data(sur);
+	img->w = cairo_image_surface_get_width(sur);
+	img->h = cairo_image_surface_get_height(sur);
 
 	switch (cairo_image_surface_get_format(sur)) {
 	case CAIRO_FORMAT_RGB24:
 	case CAIRO_FORMAT_ARGB32:
 		pixsz = 4;
-		img->chans = 3;
+		img->format = ND_PF_RGB;
 		break;
 	
 	default:
-		nd_error = ND_WRONGFORMAT;
+		nd_seterror(ND_WRONGFORMAT);
 		return (-1);
 	}
 
 	if ((img->data = malloc(sizeof(double *)
-		* img->w * img->h * img->chans)) == NULL) {
+		* img->w * img->h * nd_imgchanscount(img->format)))
+		== NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
 	
 	for (imgy = 0; imgy < img->h; ++imgy)
 		for (imgx = 0; imgx < img->w; ++imgx)
-			for (nchan = 0; nchan < img->chans; ++nchan) {
+			for (nchan = 0;
+				nchan < nd_imgchanscount(img->format);
+				++nchan) {
 				int surdatapos, imgdatapos;
 				
 				surdatapos = (imgy * img->w + imgx)
 					* pixsz + nchan;
 				
 				imgdatapos = (imgy * img->w + imgx)
-					* img->chans + nchan;	
+					* nd_imgchanscount(img->format)
+					+ nchan;	
 
 				img->data[imgdatapos]
 					= data[surdatapos] / 255.0;
@@ -122,7 +149,7 @@ int nd_imgread(const char *imgpath, struct nd_image *img)
 	return 0;
 }
 
-int nd_imgwrite(const char *imgpath, const struct nd_image *img)
+int nd_imgwrite(const struct nd_image *img, const char *imgpath)
 {
 	cairo_surface_t *sur;	
 	unsigned char *surdata;
@@ -149,8 +176,9 @@ int nd_imgwrite(const char *imgpath, const struct nd_image *img)
 		nd_seterror(ND_CAIROERROR);
 		return (-1);
 	}
-
-	if (img->chans == 1) {
+	
+	switch(img->format) {
+	case ND_PF_GRAYSCALE:
 		for (imgy = 0; imgy < img->h; ++imgy)
 			for (imgx = 0; imgx < img->w; ++imgx) {
 				int val;
@@ -164,17 +192,20 @@ int nd_imgwrite(const char *imgpath, const struct nd_image *img)
 				surdata[(imgy * img->w + imgx) * 4 + 1] = val;
 				surdata[(imgy * img->w + imgx) * 4 + 2] = val;
 			}
+		break;
 
-	}
-	else if (img->chans == 3) {		
+	case ND_PF_RGB:
 		for (imgy = 0; imgy < img->h; ++imgy)
 			for (imgx = 0; imgx < img->w; ++imgx)
-				for (nchan = 0; nchan < img->chans; ++nchan) {
+				for (nchan = 0;
+					nchan < nd_imgchanscount(img->format);
+					++nchan) {
 					int val;
 					size_t imgdatapos;	
 		
 					imgdatapos = (imgy * img->w + imgx)
-						* img->chans + nchan;
+						* nd_imgchanscount(img->format)
+						+ nchan;
 
 					val = ceil(img->data[imgdatapos]
 						* 255.0);
@@ -184,8 +215,9 @@ int nd_imgwrite(const char *imgpath, const struct nd_image *img)
 					surdata[(imgy * img->w + imgx) * 4
 						+ nchan] = val;
 			}
-	}
-	else {
+		break;
+	
+	default:
 		nd_seterror(ND_INVALIDIMAGE);
 		return (-1);
 	}
@@ -223,12 +255,15 @@ int nd_imghsvval(struct nd_image *img)
 	for (npix = 0; npix < img->w * img->h; ++npix) {
 		int nchan;
 		
-		hsvval[npix] = img->data[npix * img->chans + 0];
+		hsvval[npix]
+			= img->data[npix * nd_imgchanscount(img->format) + 0];
 
-		for (nchan = 1; nchan < img->chans; ++nchan) {
+		for (nchan = 1;
+			nchan < nd_imgchanscount(img->format); ++nchan) {
 			double chanval;
 			
-			chanval = img->data[npix * img->chans + nchan];
+			chanval = img->data[npix
+				* nd_imgchanscount(img->format) + nchan];
 			hsvval[npix] = (chanval > hsvval[npix])
 				? chanval : hsvval[npix];
 		}
@@ -237,7 +272,7 @@ int nd_imghsvval(struct nd_image *img)
 
 	free(img->data);
 	
-	img->chans = 1;
+	img->format = ND_PF_GRAYSCALE;
 	img->data = hsvval;
 
 	return 0;
@@ -268,16 +303,18 @@ int nd_imggrayscale(struct nd_image *img)
 
 		grayscale[npix] = 0.0;
 	
-		for (nchan = 0; nchan < img->chans; ++nchan)
+		for (nchan = 0; nchan < nd_imgchanscount(img->format); ++nchan)
 			grayscale[npix]
-				+= img->data[npix * img->chans + nchan];
+				+= img->data[npix
+					* nd_imgchanscount(img->format)
+					+ nchan];
 
-		grayscale[npix] /= img->chans;
+		grayscale[npix] /= nd_imgchanscount(img->format);
 	}
 
 	free(img->data);
 	
-	img->chans = 1;
+	img->format = ND_PF_GRAYSCALE;
 	img->data = grayscale;
 
 	return 0;
@@ -294,7 +331,7 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 		return (-1);
 	}
 
-	if (!nd_imgisvalid(img) || img->chans > 1) {
+	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
 		nd_seterror(ND_INVALIDIMAGE);
 		return (-1);
 	}
@@ -346,7 +383,7 @@ int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 		|| imgout == NULL
 		|| imgout->w < w
 		|| imgout->h < h
-		|| imgout->chans != imgin->chans) {
+		|| imgout->format != imgin->format) {
 		nd_seterror(ND_INVALIDARG);
 		return (-1);
 	}
@@ -361,15 +398,17 @@ int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 		return (-1);
 	}
 
-	for (y = 0; y < h; ++y) {
-		memcpy(imgout->data + y * imgout->w * imgout->chans,
-			imgin->data + (y + y0) * imgin->w * imgin->chans + x0 * imgin->chans,
-			sizeof(double) * w * imgin->chans);
-	}
+	for (y = 0; y < h; ++y)
+		memcpy(imgout->data
+			+ y * imgout->w * nd_imgchanscount(imgout->format),
+			imgin->data
+			+ (y + y0) * imgin->w * nd_imgchanscount(imgin->format)
+			+ x0 * nd_imgchanscount(imgin->format),
+			sizeof(double) * w * nd_imgchanscount(imgin->format));
 
 	return 0;
 }
-
+/*
 int nd_imgscale(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg)
 {
@@ -511,6 +550,7 @@ int nd_imgscale(const struct nd_image *inimg, double wrel, double hrel,
 
 	return 0;
 }
+*/
 
 static double nd_cubicinterpx(const struct nd_image *inimg, double x, int y)
 {
@@ -562,7 +602,8 @@ static double nd_cubicinterp(const struct nd_image *inimg, double x, double y)
 int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg)
 {
-	int x, y, nchan;
+	int x, y;
+	struct nd_image tmpimg;
 
 	if (inimg == NULL || hrel <= 0.0 || wrel <= 0.0
 		|| outimg == NULL) {
@@ -570,32 +611,39 @@ int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 		return (-1);
 	}
 
-	if (!nd_imgisvalid(inimg)) {
+	if (!nd_imgisvalid(inimg) || inimg->format != ND_PF_GRAYSCALE) {
 		nd_seterror(ND_INVALIDIMAGE);
 		return (-1);
 	}
 
-	outimg->w = ceil(wrel * inimg->w);	
-	outimg->h = ceil(hrel * inimg->h);
-	outimg->chans = inimg->chans;
+	tmpimg.w = ceil(wrel * inimg->w);	
+	tmpimg.h = ceil(hrel * inimg->h);
+	tmpimg.format = inimg->format;
 
-	if ((outimg->data = malloc(sizeof(double) * outimg->w * outimg->h
-		* outimg->chans)) == NULL) {
+	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h))
+		== NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
 
-	for (y = 0; y < outimg->h; ++y)
-		for (x = 0; x < outimg->w; ++x) 
-			for (nchan = 0; nchan < inimg->chans; ++nchan) {
-				double iny, inx;
-	
-				iny = ((double) y) / hrel;
-				inx = ((double) x) / wrel;
-				
-				outimg->data[y * outimg->w + x]
-					= nd_cubicinterp(inimg, inx, iny);
-			}
+	for (y = 0; y < tmpimg.h; ++y)
+		for (x = 0; x < tmpimg.w; ++x) {
+			double iny, inx;
+
+			iny = ((double) y) / hrel;
+			inx = ((double) x) / wrel;
+			
+			tmpimg.data[y * tmpimg.w + x]
+				= nd_cubicinterp(inimg, inx, iny);
+		}
+
+	if (inimg == outimg)
+		free(outimg->data);
+
+	outimg->w = tmpimg.w;
+	outimg->h = tmpimg.h;
+	outimg->format = tmpimg.format;
+	outimg->data = tmpimg.data;
 
 	return 0;
 }
@@ -638,7 +686,7 @@ static double nd_linearinterp(const struct nd_image *inimg, double x, double y)
 int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg)
 {
-	int x, y, nchan;
+	int x, y;
 	struct nd_image tmpimg;
 
 	if (inimg == NULL || hrel <= 0.0 || wrel <= 0.0
@@ -647,36 +695,38 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 		return (-1);
 	}
 
-	if (!nd_imgisvalid(inimg)) {
+	if (!nd_imgisvalid(inimg) || inimg->format != ND_PF_GRAYSCALE) {
 		nd_seterror(ND_INVALIDIMAGE);
 		return (-1);
 	}
 
 	tmpimg.w = ceil(wrel * inimg->w);	
 	tmpimg.h = ceil(hrel * inimg->h);
-	tmpimg.chans = inimg->chans;
+	tmpimg.format = inimg->format;
 
-	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h
-		* tmpimg.chans)) == NULL) {
+	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h))
+		== NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
-
-	for (y = 0; y < tmpimg.h; ++y)
-		for (x = 0; x < tmpimg.w; ++x) 
-			for (nchan = 0; nchan < inimg->chans; ++nchan) {
-				double iny, inx;
 	
-				iny = ((double) y) / hrel;
-				inx = ((double) x) / wrel;
+	for (y = 0; y < tmpimg.h; ++y)
+		for (x = 0; x < tmpimg.w; ++x) {
+			double iny, inx;
+	
+			iny = ((double) y) / hrel;
+			inx = ((double) x) / wrel;
 				
-				tmpimg.data[y * tmpimg.w + x]
-					= nd_linearinterp(inimg, inx, iny);
-			}
+			tmpimg.data[y * tmpimg.w + x]
+				= nd_linearinterp(inimg, inx, iny);
+		}
+
+	if (inimg == outimg)
+		free(outimg->data);
 
 	outimg->w = tmpimg.w;
 	outimg->h = tmpimg.h;
-	outimg->chans = tmpimg.chans;
+	outimg->format = tmpimg.format;
 	outimg->data = tmpimg.data;
 
 	return 0;
@@ -750,6 +800,11 @@ int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
 	}
 
 	if (!nd_imgisvalid(img)) {
+		nd_seterror(ND_INVALIDIMAGE);
+		return (-1);
+	}
+
+	if (img->format != ND_PF_GRAYSCALE) {
 		nd_seterror(ND_INVALIDIMAGE);
 		return (-1);
 	}

@@ -34,7 +34,7 @@ int imghsplit(struct nd_image *img, struct nd_image *imgparts, int partc)
 
 	for (partn = 0; partn < partc; ++partn) {
 		if (nd_imgcreate(imgparts + partn,
-			img->w, img->h / partc, 1) < 0) {
+			img->w, img->h / partc, ND_PF_GRAYSCALE) < 0) {
 			int partnn;
 
 			for (partnn = 0; partnn < partn; ++partnn)
@@ -63,7 +63,7 @@ int imgvsplit(struct nd_image *img, struct nd_image *imgparts, int partc)
 		
 		if (nd_imgcreate(imgparts + partn,
 			partn != partc - 1 ? partw : img->w - partw * partn,
-			img->h, 1) < 0) {
+			img->h, ND_PF_GRAYSCALE) < 0) {
 			int partnn;
 
 			for (partnn = 0; partnn < partn; ++ partnn)
@@ -121,6 +121,7 @@ int checkline(struct nd_image *img, double rho, double theta,
 
 	if ((lo == LO_LEFT || lo == LO_RIGHT)
 		&& !(theta > M_PI * 0.25 && theta < M_PI * 0.75)) {	
+
 		double vbandlen;
 		double sumborder;
 		double suminner;
@@ -134,7 +135,7 @@ int checkline(struct nd_image *img, double rho, double theta,
 			rho + vbandlen * 2.0 + 0.01, theta);
 
 		return (sumborder > suminner) ? 1 : 0;
-/*	
+/*
 		double vbandlen = img->w * 0.125;
 		double valdif;
 		double sumborder;
@@ -189,13 +190,13 @@ int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 
 	if (np_canny(img, mask, -1.0, -1.0) < 0)
 		return (-1);
-
+/*
 	if (1) {
 		int x, y;
 		struct nd_image test;
 		const char *path;
 
-		nd_imgcreate(&test, img->w, img->h, 1);
+		nd_imgcreate(&test, img->w, img->h, ND_PF_GRAYSCALE);
 	
 		for (y = 0; y < test.h; ++y)
 			for (x = 0; x < test.w; ++x)
@@ -220,9 +221,9 @@ int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 			break;
 		}
 			
-		nd_imgwrite(path, &test);
+		nd_imgwrite(&test, path);
 	}
-
+*/
 	if ((hlines = malloc(sizeof(double) * HOUGHMAXLINES * 2)) == NULL) {
 		safefree((void **)&mask);
 

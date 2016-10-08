@@ -3,22 +3,33 @@
 
 #include "nd_vecmat.h"
 
+enum ND_PIXELFORMAT {
+	ND_PF_GRAYSCALE,
+	ND_PF_RGB,
+	ND_PF_ARGB
+};
+
 struct nd_image {
 	int w;
 	int h;
-	int chans;
+	enum ND_PIXELFORMAT format;
 	double *data;
 };
 
 int nd_imgisvalid(const struct nd_image *img);
 
-int nd_imgcreate(struct nd_image *img, int w, int h, int chans);
+int nd_imgchanscount(enum ND_PIXELFORMAT format);
+
+int nd_imgcreate(struct nd_image *img, int w, int h,
+	enum ND_PIXELFORMAT format);
+
+int nd_imgcopy(const struct nd_image *img1, struct nd_image *img2);
 
 int nd_imgdestroy(struct nd_image *img);
 
 int nd_imgread(const char *imgpath, struct nd_image *img);
 
-int nd_imgwrite(const char *imgpath, const struct nd_image *img);
+int nd_imgwrite(const struct nd_image *img, const char *imgpath);
 
 int nd_imghsvval(struct nd_image *img);
 
@@ -28,9 +39,10 @@ int nd_imgnormalize(struct nd_image *img, int avr, int dev);
 
 int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 	struct nd_image *imgout);
-
+/*
 int nd_imgscale(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg);
+*/
 
 int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg);

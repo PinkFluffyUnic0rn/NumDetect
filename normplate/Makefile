@@ -1,6 +1,6 @@
 CC = gcc
 CCPARAM = -Wall -O3
-UTILSRC = ../utility/nd_error.c ../utility/nd_image.c
+UTILSRC = ../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c
 NORMPLATELIB = `pkg-config --cflags --libs gtk+-3.0` -lm
 CVPERSPLIB = `pkg-config --cflags --libs gtk+-3.0 opencv` -lm
 SRCINC = ../utility

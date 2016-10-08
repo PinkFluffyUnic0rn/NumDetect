@@ -69,14 +69,14 @@ int main(int argc, char **argv)
 			struct nd_image imginwin;
 
 			nd_imgcreate(&imginwin, abs(newr[rn].x1 - newr[rn].x0),
-				abs(newr[rn].y1 - newr[rn].y0), img.chans);
+				abs(newr[rn].y1 - newr[rn].y0), img.format);
 			
 			nd_imgcrop(&img,
 				newr[rn].x0, newr[rn].y0,
 				abs(newr[rn].x1 - newr[rn].x0),
 				abs(newr[rn].y1 - newr[rn].y0), &imginwin);
 			
-			nd_imgwrite(a, &imginwin);
+			nd_imgwrite(&imginwin, a);
 		}
 	}
 

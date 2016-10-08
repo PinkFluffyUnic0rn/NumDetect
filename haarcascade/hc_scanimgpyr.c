@@ -26,7 +26,7 @@ static int fastimgscan(struct nd_image *img, double *sd,
 		for (x = 1; x < img->w - hc->ww; x += conf->winwstep) {
 			imginwin.w = hc->ww + 1;
 			imginwin.h = hc->wh + 1;
-			imginwin.chans = 1;
+			imginwin.format = ND_PF_GRAYSCALE;
 			imginwin.data = img->data + (y - 1) * img->w + (x - 1);
 
 			if (hc_fastimgclassify(hc, &imginwin,
