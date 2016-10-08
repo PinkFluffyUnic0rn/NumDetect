@@ -4,4 +4,4 @@ Normalizing found number plate image
 
 Usage:
 
-	./normplate.sh [input image] [output image]
+	./normplate [input image] [output image]
