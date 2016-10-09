@@ -222,51 +222,6 @@ static int hc_hcisvalid(const struct hc_hcascade *hc)
 	return 1;
 }
 
-static int hc_readheader(FILE *file, struct hc_hcascade *hc)
-{
-	char *str;
-	size_t strsz;
-	char *cur;
-
-	strsz = 0;
-	if (getline(&str, &strsz, file) <= 0) {
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
-	
-	cur = str;
-	
-	if ((hc->ww = hc_strtoui(cur, &cur)) < 0) {
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
-
-	if ((hc->wh = hc_strtoui(cur, &cur)) < 0) {
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
- 
-	if ((hc->featurec = hc_strtoui(cur, &cur)) < 0) {
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
-
-	if ((hc->wccount = hc_strtoui(cur, &cur)) < 0) {
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
-
-	if ((hc->stagecount = hc_strtoui(cur, &cur)) < 0) {
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
-
-	free(str);
-	str = NULL;
-
-	return 0;
-}
-
 static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 {
 	int fn;
@@ -340,9 +295,6 @@ static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 
 static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 {
-	char *str;
-	size_t strsz;
-	char *cur;
 	int wcn;
 
 	if ((hc->wc = malloc(sizeof(struct hc_wclassifier) * hc->wccount))
@@ -351,121 +303,28 @@ static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 		return (-1);
 	}
 	
-	for (wcn = 0; wcn < hc->wccount; ++wcn) {
-		char *prev;
+	for (wcn = 0; wcn < hc->wccount; ++wcn)
+		fscanf(file, "%d %d %d %d %d %lf %lf\n", &(hc->wc[wcn].fn),
+			&(hc->wc[wcn].x), &(hc->wc[wcn].y),
+			&(hc->wc[wcn].w), &(hc->wc[wcn].h),
+			&(hc->wc[wcn].ineqdir), &(hc->wc[wcn].thres));
+
+	if ((hc->wccoef = malloc(sizeof(double) * hc->wccount))
+		== NULL) {
+		hc_safefree((void **)&(hc->wc));
 		
-		strsz = 0;
-		
-		if (getline(&str, &strsz, file) <= 0) {
-			hc_safefree((void **)&(hc->wc));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-	
-		cur = str;
-
-		if ((hc->wc[wcn].fn = hc_strtoui(cur, &cur)) < 0) {
-			hc_safefree((void **)&(hc->wc));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		if ((hc->wc[wcn].x = hc_strtoui(cur, &cur)) < 0) {
-			hc_safefree((void **)&(hc->wc));
-
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		if ((hc->wc[wcn].y = hc_strtoui(cur, &cur)) < 0) {
-			hc_safefree((void **)&(hc->wc));
-
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		if ((hc->wc[wcn].w = hc_strtoui(cur, &cur)) < 0) {
-			hc_safefree((void **)&(hc->wc));
-
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		if ((hc->wc[wcn].h = hc_strtoui(cur, &cur)) < 0) {
-			hc_safefree((void **)&(hc->wc));
-
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-	
-		prev = cur;
-		hc->wc[wcn].ineqdir = strtod(cur, &cur);
-		
-		if (prev == cur) {
-			hc_safefree((void **)&(hc->wc));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		prev = cur;
-		hc->wc[wcn].thres = strtod(cur, &cur);
-		
-		if (prev == cur) {
-			hc_safefree((void **)&(hc->wc));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		free(str);
-		str = NULL;
+		nd_seterror(ND_ALLOCFAULT);
+		return (-1);	
 	}
 
-	if (hc->wccount) {
-		if ((hc->wccoef = malloc(sizeof(double) * hc->wccount))
-			== NULL) {
-			hc_safefree((void **)&(hc->wc));
-			
-			nd_seterror(ND_ALLOCFAULT);
-			return (-1);	
-		}
-
-		if (getline(&str, &strsz, file) <= 0) {
-			hc_safefree((void **)&(hc->wc));
-			hc_safefree((void **)&(hc->wccoef));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		cur = str;
-
-		for (wcn = 0; wcn < hc->wccount; ++wcn) {
-			char *prev;
-
-			prev = cur;
-			hc->wccoef[wcn] = strtod(cur, &cur);
-
-			if (prev == cur) {
-				hc_safefree((void **)&(hc->wc));
-				hc_safefree((void **)&(hc->wccoef));
-
-				nd_seterror(ND_READFILEERROR);
-				return (-1);
-			}
-		}
-
-		free(str);
-		str = NULL;
-	}
+	for (wcn = 0; wcn < hc->wccount; ++wcn)
+		fscanf(file, "%lf", hc->wccoef + wcn);
 
 	return 0;
 }
 
-int hc_readstages(FILE *file, struct hc_hcascade *hc)
+
+static int hc_readstages(FILE *file, struct hc_hcascade *hc)
 {
 	int stn;
 
@@ -477,42 +336,13 @@ int hc_readstages(FILE *file, struct hc_hcascade *hc)
 		return (-1);	
 	}
 
-	for (stn = 0; stn < hc->stagecount; ++stn) {
-		char *str;
-		size_t strsz;
-		char *cur;
-		char *prev;
-		
-		strsz = 0;
-		if (getline(&str, &strsz, file) <= 0) {
-			hc_safefree((void **)&(hc->stage));
 
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
+	for (stn = 0; stn < hc->stagecount; ++stn)
+		if (fscanf(file, "%d %lf", &(hc->stage[stn].wcc),
+			&(hc->stage[stn].thres)) == EOF) {
+				nd_seterror(ND_READFILEERROR);
+				return (-1);
 		}
-	
-		cur = str;
-	
-		if ((hc->stage[stn].wcc = hc_strtoui(cur, &cur)) < 0) {
-			hc_safefree((void **)&(hc->stage));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-		
-		prev = cur;
-		hc->stage[stn].thres = strtod(cur, &cur);
-		
-		if (prev == cur) {
-			hc_safefree((void **)&(hc->stage));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-
-		free(str);
-		str = NULL;
-	}	
 
 	return 0;
 }
@@ -531,8 +361,8 @@ int hc_hcascaderead(struct hc_hcascade *hc, const char *hcpath)
 		return (-1);
 	}
 
-	if (hc_readheader(file, hc) < 0)
-		return (-1);
+	fscanf(file, "%d %d %d %d %d\n", &(hc->ww), &(hc->wh), &(hc->featurec),
+		&(hc->wccount), &(hc->stagecount));
 
 	if (hc->featurec > 0) {
 		if (hc_readfeatures(file, hc) < 0)
@@ -552,7 +382,7 @@ int hc_hcascaderead(struct hc_hcascade *hc, const char *hcpath)
 		hc->wc = NULL;
 		hc->wccoef = NULL;
 	}
-
+	
 	if (hc->stagecount > 0) {
 		if (hc_readstages(file, hc) < 0) {
 			hc_safefree((void **)&(hc->feature));
