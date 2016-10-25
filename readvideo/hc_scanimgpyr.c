@@ -53,7 +53,7 @@ static int nd_fastimgscan(struct nd_image *img, double *sd,
 	return 0;
 }
 
-int nd_imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
+int nd_imgpyramidscan(struct hc_hcascade *hc, const struct nd_image *img,
 	struct hc_rect **newr, int *newrc, const struct hc_scanconfig *conf)
 {
 	double d;
@@ -76,8 +76,7 @@ int nd_imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		int prevrc;
 		int x, y;
 
-		if (nd_imgscalebilinear(img, d, d, &scaledimg) < 0) {
-		
+		if (nd_imgscalebilinear(img, d, d, &scaledimg) < 0) {		
 			return (-1);
 		}
 
@@ -120,7 +119,6 @@ int nd_imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		
 			return (-1);
 		}
-
 
 		for (y = 0; y < scaledimg.h - hc->wh; y += 1)
 			for (x = 0; x < scaledimg.w - hc->ww; x += 1) {

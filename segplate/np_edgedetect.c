@@ -91,7 +91,7 @@ int gaussblur(struct nd_image *img, double sigma)
 		return (-1);
 	}
 
-	if (!nd_imgisvalid(img) || img->chans > 1) {
+	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
 		nd_seterror(ND_INVALIDARG);
 		return (-1);
 	}
@@ -340,6 +340,7 @@ static int otsu(double *pix, int imgsize, int histsize, double *thres)
 		int histel;
 
 		histel = (int) ceil(pix[pixn] * rel);
+	
 		++hist[histel];
 	
 	}
@@ -406,7 +407,7 @@ int np_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 		return (-1);
 	}
 
-	if (!nd_imgisvalid(img) || img->chans > 1) {
+	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
 		nd_seterror(ND_INVALIDARG);
 		return (-1);
 	}
@@ -422,7 +423,7 @@ int np_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
-
+	
 	if (sobel(img, gradval, graddir) < 0) {
 		np_safefree((void **)&gradval);
 		np_safefree((void **)&graddir);

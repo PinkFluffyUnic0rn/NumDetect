@@ -1,5 +1,5 @@
 CC=gcc
-SRC=readvideo.c hc_hcascade.c hc_rect.c hc_scanimgpyr.c
+SRC=readvideo.c hc_procsync.c hc_hcascade.c hc_rect.c hc_scanimgpyr.c
 OPT=-Wall
 LIB=-lavcodec -lavutil -lavformat -lswscale -pthread -lm \
 `pkg-config --cflags --libs gtk+-3.0`

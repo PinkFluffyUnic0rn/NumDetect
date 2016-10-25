@@ -303,19 +303,25 @@ static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 		return (-1);
 	}
 	
-	for (wcn = 0; wcn < hc->wccount; ++wcn)
-		fscanf(file, "%d %d %d %d %d %lf %lf\n", &(hc->wc[wcn].fn),
-			&(hc->wc[wcn].x), &(hc->wc[wcn].y),
-			&(hc->wc[wcn].w), &(hc->wc[wcn].h),
-			&(hc->wc[wcn].ineqdir), &(hc->wc[wcn].thres));
-
-	if ((hc->wccoef = malloc(sizeof(double) * hc->wccount))
+	if ((hc->wc != 0 && hc->wccoef = malloc(sizeof(double) * hc->wccount))
 		== NULL) {
 		hc_safefree((void **)&(hc->wc));
 		
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);	
 	}
+
+	for (wcn = 0; wcn < hc->wccount; ++wcn)
+		if (fscanf(file, "%d %d %d %d %d %lf %lf\n", &(hc->wc[wcn].fn),
+			&(hc->wc[wcn].x), &(hc->wc[wcn].y),
+			&(hc->wc[wcn].w), &(hc->wc[wcn].h),
+			&(hc->wc[wcn].ineqdir), &(hc->wc[wcn].thres)) == EOF) {
+			hc_safefree((void **)&(hc->wc));
+			hc_safefree((void **)&(hc->wccoef));
+		
+			nd_seterror(ND_ALLOCFAULT);
+			return (-1);	
+		}
 
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
 		fscanf(file, "%lf", hc->wccoef + wcn);
@@ -329,17 +335,16 @@ static int hc_readstages(FILE *file, struct hc_hcascade *hc)
 	int stn;
 
 	if ((hc->stage = malloc(sizeof(struct hc_stage) * hc->stagecount))
-		== NULL) {
-		hc_safefree((void **)&(hc->stage));
-		
+		== NULL) {	
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);	
 	}
 
-
 	for (stn = 0; stn < hc->stagecount; ++stn)
 		if (fscanf(file, "%d %lf", &(hc->stage[stn].wcc),
 			&(hc->stage[stn].thres)) == EOF) {
+				hc_safefree((void **)&(hc->stage));
+				
 				nd_seterror(ND_READFILEERROR);
 				return (-1);
 		}
@@ -606,19 +611,6 @@ static int hc_wclassify(const struct hc_wclassifier *wc,
 {
 	return ((wc->ineqdir * hc_gethprimval(wc, feat, img))
 		< (wc->ineqdir * wc->thres));
-}
-
-double kahansum(double sum, double b, double *c)
-{
-	double t;
-	double y;
-
-	y = b - *c;
-	t = sum + y;
-	*c = (t - sum) - y;
-	sum = t;
-
-	return sum;
 }
 
 int hc_imgintegral(struct nd_image *img)
