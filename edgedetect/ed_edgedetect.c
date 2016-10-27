@@ -1,8 +1,8 @@
 #include <math.h>
 
-#include "np_edgedetect.h"
+#include "ed_edgedetect.h"
 #include "nd_error.h"
-#include "fft.h"
+#include "ed_fft.h"
 
 struct houghline {
 	double ang;
@@ -16,7 +16,7 @@ struct point {
 	int y;
 };
 
-static void np_safefree(void **p)
+static void ed_safefree(void **p)
 {
 	if (*p != NULL) {
 		free(*p);
@@ -79,7 +79,7 @@ static double gfunc(double x, double sigma)
 	return exp((-1) * (x * x) / (2.0 * sigma * sigma));
 }
 
-int gaussblur(struct nd_image *img, double sigma)
+int ed_gaussblur(struct nd_image *img, double sigma)
 {
 	int x, y, i, sigma3;
 	int w, h;
@@ -108,15 +108,15 @@ int gaussblur(struct nd_image *img, double sigma)
 	data = (double *)img->data;
 
 	if ((tmpx = (double *)calloc(w * h, sizeof(double))) == NULL) {
-		np_safefree((void **)&tmpx);
+		ed_safefree((void **)&tmpx);
 
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
 
 	if ((tmpy = (double *)calloc(w * h, sizeof(double))) == NULL) {
-		np_safefree((void **)&tmpx);
-		np_safefree((void **)&tmpy);
+		ed_safefree((void **)&tmpx);
+		ed_safefree((void **)&tmpy);
 		
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
@@ -144,7 +144,7 @@ int gaussblur(struct nd_image *img, double sigma)
 	return 0;
 }
 
-int np_removelowfreq(struct nd_image *img, double wthres, double hthres)
+int ed_removelowfreq(struct nd_image *img, double wthres, double hthres)
 {
 	struct complexd *c;
 	int fw, fh;
@@ -281,7 +281,7 @@ static int sobel(struct nd_image *img, double *gradval, double *graddir)
 	}
 
 	if ((gx = malloc(sizeof(double) * img->w * img->h)) == NULL) {
-		np_safefree((void **)&gx);
+		ed_safefree((void **)&gx);
 	
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
@@ -384,7 +384,7 @@ static int otsu(double *pix, int imgsize, int histsize, double *thres)
 	return 0;
 }
 
-static int np_edgenbours(int *res, int resw, int imgy, int imgx)
+static int ed_edgenbours(int *res, int resw, int imgy, int imgx)
 {
 	return (res[(imgy - 1) * resw + imgx]
 		&& res[(imgy + 1) * resw + imgx]
@@ -397,7 +397,7 @@ static int np_edgenbours(int *res, int resw, int imgy, int imgx)
 		&& res[imgy * resw + (imgx + 1)]);
 }
 
-int np_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
+int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 {
 	double *gradval, *graddir;
 	int imgx, imgy;
@@ -418,15 +418,15 @@ int np_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 	}
 		
 	if ((graddir = malloc(sizeof(double) * img->w * img->h)) == NULL) {
-		np_safefree((void **)&gradval);
+		ed_safefree((void **)&gradval);
 		
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
 	
 	if (sobel(img, gradval, graddir) < 0) {
-		np_safefree((void **)&gradval);
-		np_safefree((void **)&graddir);
+		ed_safefree((void **)&gradval);
+		ed_safefree((void **)&graddir);
 	
 		return (-1);
 	}
@@ -514,7 +514,7 @@ int np_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 	for (imgy = 1; imgy < img->h - 1; ++imgy)
 		for (imgx = 1; imgx < img->w - 1; ++imgx)
 			if (outmask[imgy * img->w + imgx] == 1) {
-				if (!np_edgenbours(outmask,
+				if (!ed_edgenbours(outmask,
 					img->w, imgy, imgx))
 					outmask[imgy * img->w + imgx] = 0;
 			}
@@ -522,13 +522,13 @@ int np_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 	return 0;
 }
 
-static int np_compline(const void *hl0, const void *hl1)
+static int compline(const void *hl0, const void *hl1)
 {
 	return (((struct houghline *) hl1)->votes
 		- ((struct houghline *) hl0)->votes);
 }
 
-static int np_houghismax(int *acc, int arange, int drange, int ang, int d)
+static int ed_houghismax(int *acc, int arange, int drange, int ang, int d)
 {
 	if (ang - 1 > 0 && acc[d * arange + ang]
 		<= acc[d * arange + ang - 1])
@@ -549,7 +549,7 @@ static int np_houghismax(int *acc, int arange, int drange, int ang, int d)
 	return 1;
 }
 
-int np_hough(int *img, int imgw, int imgh, double dang,
+int ed_hough(int *img, int imgw, int imgh, double dang,
 	double *lines, int linemaxc)
 {
 	int arange, drange;
@@ -593,11 +593,11 @@ int np_hough(int *img, int imgw, int imgh, double dang,
 	for (d = 0; d < drange; ++d)
 		for (ang = 0; ang < arange; ++ang)
 			if (acc[d * arange + ang]
-				&& np_houghismax(acc, arange, drange, ang, d))
+				&& ed_houghismax(acc, arange, drange, ang, d))
 				++linec;
 
 	if ((hl = malloc(sizeof(struct houghline) * linec)) == NULL) {
-		np_safefree((void **)&acc);
+		ed_safefree((void **)&acc);
 	
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
@@ -607,7 +607,7 @@ int np_hough(int *img, int imgw, int imgh, double dang,
 	for (d = 0; d < drange; ++d)
 		for (ang = 0; ang < arange; ++ang)
 			if (acc[d * arange + ang]
-				&& np_houghismax(acc, arange,
+				&& ed_houghismax(acc, arange,
 				drange, ang, d)) {
 				hl[linen].ang = (double) ang * dang;
 				hl[linen].d = (double) (d - drange / 2);
@@ -616,7 +616,7 @@ int np_hough(int *img, int imgw, int imgh, double dang,
 				++linen;
 			}
 
-	qsort(hl, linec, sizeof(struct houghline), np_compline);
+	qsort(hl, linec, sizeof(struct houghline), compline);
 
 	linen = 0;
 	for (linen = 0; linen < linemaxc; ++linen) {
@@ -624,13 +624,13 @@ int np_hough(int *img, int imgw, int imgh, double dang,
 		lines[2 * linen + 1] = hl[linen].d;
 	}
 
-	np_safefree((void **)&acc);
-	np_safefree((void **)&hl);
+	ed_safefree((void **)&acc);
+	ed_safefree((void **)&hl);
 
 	return 0;
 }
 
-static int np_comppoint(const void *p0, const void *p1)
+static int comppoint(const void *p0, const void *p1)
 {
 	int dif;
 
@@ -642,13 +642,13 @@ static int np_comppoint(const void *p0, const void *p1)
 		return ((struct point *) p1)->y - ((struct point *) p0)->y;
 }
 
-static int np_compseg(const void *s0, const void *s1)
+static int compseg(const void *s0, const void *s1)
 {
 	return (((struct lineseg *) s1)->pointc
 		- ((struct lineseg *) s0)->pointc);
 }
 
-int np_houghseg(int *img, int imgw, int imgh, double *lines, int linec,
+int ed_houghseg(int *img, int imgw, int imgh, double *lines, int linec,
 	struct lineseg *seg, int maxsegc, double maxgap)
 {	
 	int imgy, imgx;
@@ -694,7 +694,7 @@ int np_houghseg(int *img, int imgw, int imgh, double *lines, int linec,
 					}
 				}
 
-		qsort(linep, linepc, sizeof(struct point), np_comppoint);
+		qsort(linep, linepc, sizeof(struct point), comppoint);
 
 		seg[segc].x0 = linep[0].x;
 		seg[segc].y0 = linep[0].y;
@@ -730,9 +730,9 @@ int np_houghseg(int *img, int imgw, int imgh, double *lines, int linec,
 	
 	segc = maxsegc;
 
-	qsort(seg, segc, sizeof(struct lineseg), np_compseg);
+	qsort(seg, segc, sizeof(struct lineseg), compseg);
 
-	np_safefree((void **)&linep);
+	ed_safefree((void **)&linep);
 
 	return 0;
 }

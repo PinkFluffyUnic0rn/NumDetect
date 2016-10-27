@@ -2,7 +2,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "fft.h"
+#include "ed_fft.h"
 
 int log2uint(uint32_t a)
 {

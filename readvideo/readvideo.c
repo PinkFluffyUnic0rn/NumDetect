@@ -142,6 +142,19 @@ int imgcreateshared(struct nd_image **img, int w, int h, int format)
 	return 0;
 }
 
+int imgdestroyshared(struct nd_image **img)
+{
+	if (munmap(*img, sizeof(struct nd_image)
+		+ (*img)->w * (*img)->h * sizeof(double)) < 0) {
+		fprintf(stderr, "Cannot destroy shared memory mapping");
+		return (-1);
+	}
+
+	*img = NULL;
+
+	return 0;
+}
+
 int readframe(AVFormatContext *s, AVCodecContext *vcodecc, int vstreamid,
 	AVFrame *frame, int *isdecoded)
 {
@@ -360,14 +373,9 @@ int pbnexttimestamp(struct playbackstate *pbs)
 		twait.tv_nsec = (twaitd - floor(twaitd)) * 1.0e9;
 		
 		if (nanosleep(&twait, NULL) < 0) {
-			printf("%ld\n %ld\n", twait.tv_sec, twait.tv_nsec);
-			printf("%lf %lf\n", tcurd - floor(tcurd),
-				tframed - floor(tframed));
-		
 			fprintf(stderr, "Cannot put process to sleep.\n");
 			return (-1);
 		}
-		
 	}
 
 	++(pbs->timestamp);
@@ -399,6 +407,9 @@ int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 			return (-1);
 		}
 
+		if (img->data == NULL)
+			return 0;
+
 		if (hc_imgpyramidscan(&(hcd.hc), img, &r, &rc,
 			&(hcd.scanconf)) < 0) {
 			fprintf(stderr, "nd_imgpyramidscan: %s.\n",
@@ -419,7 +430,8 @@ int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 		}
 	}
 
-	return 0;
+	fprintf(stderr, "Unexpexted loop quit\n");
+	return (-1);
 }
 
 int rgbdatatoimg(uint8_t *rgbdata, int rgblinesize, struct nd_image *img)
@@ -486,7 +498,6 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 	}
 
 	fprintf(stderr, "Unexpexted loop quit\n");
-
 	return (-1);
 }
 
@@ -519,9 +530,10 @@ int main(int argc, char **argv)
 		if (scanloop(img, argv[2], argv[3]) < 0)
 			return 1;
 		
-		if (nd_psclose() < 0) {
+		if (nd_psclose(1) < 0) {
 			fprintf(stderr, "nd_psclose: %s.\n",
 				nd_strerror(nd_error));
+			perror("");
 			return 1;
 		}
 	}
@@ -536,15 +548,33 @@ int main(int argc, char **argv)
 
 		if (decodeloop(&av, img) < 0)
 			return 1;
+	
+		if (nd_pslock(0) < 0) {
+			fprintf(stderr, "nd_pslock: %s.\n",
+				nd_strerror(nd_error));
+			return (-1);
+		}
+
+		img->data = NULL;
+		
+		if (nd_psunlock(0) < 0) {
+			fprintf(stderr, "nd_psunlock: %s.\n",
+				nd_strerror(nd_error));
+			return (-1);
+		}	
 		
 		wait(&retval);
 		
-		if (nd_psclose() < 0) {
+		if (nd_psclose(0) < 0) {
 			fprintf(stderr, "nd_psclose: %s.\n",
 				nd_strerror(nd_error));
+			perror("");
 			return 1;
 		}
 	}
+
+	if (imgdestroyshared(&img) < 0)
+		return 1;
 
 	av_frame_unref(av.frame);
 	avcodec_free_context(&(av.vcodecc));

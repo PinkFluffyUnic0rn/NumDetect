@@ -137,12 +137,19 @@ int nd_psunlock(int pn)
 	return 0;
 }
 
-int nd_psclose()
+int nd_psclose(int pn)
 {
-	if (close(pfdp[0]) < 0 || close(pfdp[1]) < 0
-		|| close(pfdc[0]) < 0 || close(pfdc[1]) < 0) {
-		nd_seterror(ND_CLOSEERROR);
-		return (-1);
+	if (pn == 0) {
+		if (close(pfdp[0]) < 0 || close(pfdc[1]) < 0) {
+			nd_seterror(ND_CLOSEERROR);
+			return (-1);
+		}
+	}
+	else {
+		if (close(pfdp[1]) < 0 || close(pfdc[0]) < 0) {
+			nd_seterror(ND_CLOSEERROR);
+			return (-1);
+		}
 	}
 
 	return 0;

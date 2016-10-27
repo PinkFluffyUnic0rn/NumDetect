@@ -6,6 +6,6 @@ int nd_psinitpostfork(int pn);
 int nd_pstrylock(int readfd);
 int nd_pslock(int readfd);
 int nd_psunlock(int writefd);
-int nd_psclose();
+int nd_psclose(int pn);
 
 #endif

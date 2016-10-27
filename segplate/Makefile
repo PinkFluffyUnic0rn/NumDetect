@@ -1,6 +1,6 @@
 CC=gcc
 SRC=segplate.c
-EDSRC=../edgedetect/np_edgedetect.c ../edgedetect/fft.c
+EDSRC=../edgedetect/ed_edgedetect.c ../edgedetect/ed_fft.c
 UTILSRC=../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c
 OPT=-Wall -O3
 LIB=`pkg-config --cflags --libs gtk+-3.0` -lm

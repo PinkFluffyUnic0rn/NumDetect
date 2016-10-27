@@ -5,7 +5,7 @@
 
 #include "nd_image.h"
 #include "nd_error.h"
-#include "np_edgedetect.h"
+#include "ed_edgedetect.h"
 
 #include <gtk/gtk.h>
 #include <cairo.h>
@@ -171,11 +171,11 @@ int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	int linen;
 
 	if (lineorient == LO_LEFT || lineorient == LO_RIGHT)
-		if (np_removelowfreq(img, 0.0, 0.0) < 0)
+		if (ed_removelowfreq(img, 0.0, 0.0) < 0)
 			return (-1);
 
 	if (lineorient == LO_TOP || lineorient == LO_BOTTOM)
-		if (np_removelowfreq(img, 0.0, 0.0) < 0)
+		if (ed_removelowfreq(img, 0.0, 0.0) < 0)
 			return (-1);
 
 	if (nd_imgnormalize(img, 1, 1) < 0)
@@ -193,7 +193,7 @@ int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 		return (-1);
 	}
 
-	if (np_canny(img, mask, -1.0, -1.0) < 0)
+	if (ed_canny(img, mask, -1.0, -1.0) < 0)
 		return (-1);
 
 	if ((hlines = malloc(sizeof(double) * HOUGHMAXLINES * 2)) == NULL) {
@@ -203,7 +203,7 @@ int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 		return (-1);
 	}
 	
-	if (np_hough(mask, img->w, img->h,
+	if (ed_hough(mask, img->w, img->h,
 		M_PI / 180.0, hlines, HOUGHMAXLINES) < 0) {
 		safefree((void **)&mask);
 		safefree((void **)&lines);
@@ -359,7 +359,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 /*
-	np_removelowfreq(&img, 0.05, 0.0);
+	ed_removelowfreq(&img, 0.05, 0.0);
 
 	nd_imgwrite("test.png", &img);
 	exit(1);

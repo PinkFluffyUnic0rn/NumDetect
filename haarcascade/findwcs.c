@@ -93,7 +93,7 @@ int main(int argc, const char **argv)
 		printf("hc_readtrset: %s.\n", nd_strerror(nd_error));
 		return 1;
 	}
-
+	
 	if (hc_hcascaderead(&hc, argv[2]) < 0) {
 		printf("hc_hcascaderead: %s.\n", nd_strerror(nd_error));
 		return 1;

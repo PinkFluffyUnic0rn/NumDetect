@@ -35,24 +35,6 @@ static void hc_safefree(void **p)
 	}
 }
 
-static int hc_strtoui(const char *cur, char **next)
-{
-	long int v;
-	
-	v = strtol(cur, next, 0);
-
-	if (cur == *next)
-		return (-1);
-
-	if (v == LONG_MIN || v == LONG_MAX)
-		return (-1);
-	
-	if (v > INT_MAX)
-		return (-1);
-
-	return v;
-}
-
 int hc_tsisvalid(struct hc_trainingset *ts)
 {
 	if (ts->img == NULL || ts->isgood == NULL || ts->imgc <= 0)
@@ -64,12 +46,10 @@ int hc_tsisvalid(struct hc_trainingset *ts)
 int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 {
 	FILE *file;
-	char *str;
-	size_t strsz;
-	char *cur;
 	int goodc;
 	int badc;
 	int imgn;
+	int imgnn;
 
 	if (ts == NULL || hcpath == NULL) {
 		nd_seterror(ND_INVALIDARG);
@@ -81,97 +61,59 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 		return (-1);
 	}
 
-	strsz = 0;
-	if (getline(&str, &strsz, file) <= 0) {
-		nd_seterror(ND_READFILEERROR);
+	if (fscanf(file, "%d %d\n", &goodc, &badc) < 0) {
+		nd_seterror(ND_FOPENERROR);
 		return (-1);
 	}
-
-	cur = str;
 	
-	if ((goodc = hc_strtoui(cur, &cur)) < 0) {
-		hc_safefree((void **)&str);
-		
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
-
-	if ((badc = hc_strtoui(cur, &cur)) < 0) {
-		hc_safefree((void **)&str);
-		
-		nd_seterror(ND_READFILEERROR);
-		return (-1);
-	}
-
 	ts->imgc = goodc + badc;
-
-	hc_safefree((void **)&str);
 	
 	if ((ts->img = malloc(sizeof(struct nd_image) * ts->imgc)) == NULL) {
-		hc_safefree((void **)&str);
-		
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
 	
 	for (imgn = 0; imgn < ts->imgc; ++imgn) {
-		if (getline(&str, &strsz, file) <= 0) {
-			int imgnn;
-
-			for (imgnn = 0; imgnn < imgn; ++imgnn)
-				nd_imgdestroy(ts->img + imgnn);
-
-			hc_safefree((void **)&(ts->img));
-		
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
+		char *imgpath;
+		size_t strsz;
+	
+		strsz = 0;
+		if (getline(&imgpath, &strsz, file) <= 0) {
+			hc_safefree((void **)&imgpath);
+			goto returnerror;
 		}
 	
-		str[strlen(str) - 1] = '\0';
-			
-		if (nd_imgread(str, ts->img + imgn) < 0) {
-			int imgnn;
-			
-			for (imgnn = 0; imgnn < imgn; ++imgnn)
-				nd_imgdestroy(ts->img + imgnn);
-	
-			hc_safefree((void **)&(ts->img));
-			hc_safefree((void **)&str);
-			
-			return (-1);
+		imgpath[strlen(imgpath) - 1] = '\0';
+
+		if (nd_imgread(imgpath, ts->img + imgn) < 0) {
+			hc_safefree((void **)&imgpath);
+			goto returnerror;
 		}
 
 		if (nd_imggrayscale(ts->img + imgn) < 0) {
-			int imgnn;
-			
-			for (imgnn = 0; imgnn < imgn; ++imgnn)
-				nd_imgdestroy(ts->img + imgnn);
-
-			hc_safefree((void **)&(ts->img));
-			hc_safefree((void **)&str);
-
-			return (-1);
+			hc_safefree((void **)&imgpath);
+			goto returnerror;
 		}
-
-		hc_safefree((void **)&str);
+			
+		hc_safefree((void **)&imgpath);
 	}
-
-	if ((ts->isgood = malloc(sizeof(int) * ts->imgc)) == NULL) {
-		int imgnn;
-		
-		for (imgnn = 0; imgnn < imgn; ++imgnn)
-			nd_imgdestroy(ts->img + imgnn);
-
-		hc_safefree((void **)&(ts->img));
-
-		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
-	}
+	
+	if ((ts->isgood = malloc(sizeof(int) * ts->imgc)) == NULL)
+		goto returnerror;
 
 	for (imgn = 0; imgn < ts->imgc; ++imgn)
 		ts->isgood[imgn] = imgn < goodc ? 1 : 0;
 
 	return 0;
+
+returnerror:
+	for (imgnn = 0; imgnn < imgn; ++imgnn)
+		nd_imgdestroy(ts->img + imgnn);
+
+	hc_safefree((void **)&(ts->img));
+			
+	nd_seterror(ND_READFILEERROR);
+	return (-1);
 }
 
 int hc_create(struct hc_hcascade *hc, int ww, int wh, 
@@ -233,61 +175,29 @@ static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 	}
 
 	for (fn = 0; fn < hc->featurec; ++fn) {
-		char *str;
-		size_t strsz;
-		char *cur;
 		int w, h;
 		int pixn;
 
-		strsz = 0;
-		if (getline(&str, &strsz, file) <= 0) {
-			hc_safefree((void **)&(hc->feature));
-			
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
-	
-		cur = str;
-
-		if ((w = hc_strtoui(cur, &cur)) < 0) {
-			free(hc->feature);
-			hc->feature = NULL;
+		if (fscanf(file, "%d %d", &w, &h) < 0) {
 			hc_safefree((void **)&(hc->feature));
 			
 			nd_seterror(ND_READFILEERROR);
 			return (-1);
 		}
 
-		if ((h = hc_strtoui(cur, &cur)) < 0) {
-			hc_safefree((void **)&(hc->feature));
-
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
-		}
- 
 		if (nd_imgcreate(hc->feature + fn, w, h, 1) < 0) {
 			hc_safefree((void **)&(hc->feature));
-
 			return (-1);
 		}
 		
-		for (pixn = 0; pixn < w * h; ++pixn) {
-			char *prev;
-
-			prev = cur;
-			hc->feature[fn].data[pixn] = strtod(cur, &cur);
-			
-			if (prev == cur) {
-				hc_safefree((void **)&(hc->feature));	
-				nd_imgdestroy(hc->feature + fn);
+		for (pixn = 0; pixn < w * h; ++pixn)
+			if (fscanf(file, "%lf", hc->feature[fn].data + pixn)
+				< 0) {
+				hc_safefree((void **)&(hc->feature));
 				
 				nd_seterror(ND_READFILEERROR);
 				return (-1);
 			}
-		}
-
-		free(str);
-		str = NULL;
 	}
 	
 	return 0;
@@ -303,11 +213,8 @@ static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 		return (-1);
 	}
 	
-	if ((hc->wc != 0)
-		&& (hc->wccoef = malloc(sizeof(double) * hc->wccount))
-		== NULL) {
+	if ((hc->wccoef = malloc(sizeof(double) * hc->wccount)) == NULL) {
 		hc_safefree((void **)&(hc->wc));
-		
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);	
 	}
@@ -435,7 +342,7 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 
 	if (fprintf(file, "%d %d %d %d %d\n", hc->ww, hc->wh,
 		hc->featurec, hc->wccount, hc->stagecount) < 0) {
-		nd_seterror(ND_WRITETOFILEFERROR);
+		nd_seterror(ND_WRITEFILEERROR);
 		return (-1);
 	}
 
@@ -445,7 +352,7 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 
 		if (fprintf(file, "%d %d ",
 			hc->feature[fn].w, hc->feature[fn].h) < 0) {
-			nd_seterror(ND_WRITETOFILEFERROR);
+			nd_seterror(ND_WRITEFILEERROR);
 			return (-1);
 		}
 
@@ -454,7 +361,7 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 		for (pixn = 0; pixn < pixc; ++pixn)
 			if (fprintf(file, "%lf%c", hc->feature[fn].data[pixn],
 				(pixn != pixc - 1) ? ' ' : '\n') < 0) {
-				nd_seterror(ND_WRITETOFILEFERROR);
+				nd_seterror(ND_WRITEFILEERROR);
 				return (-1);
 			}
 	}
@@ -464,21 +371,21 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 			hc->wc[wcn].x, hc->wc[wcn].y,
 			hc->wc[wcn].w, hc->wc[wcn].h, 
 			hc->wc[wcn].ineqdir, hc->wc[wcn].thres) < 0) {
-				nd_seterror(ND_WRITETOFILEFERROR);
+				nd_seterror(ND_WRITEFILEERROR);
 				return (-1);
 			}
 
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
 		if (fprintf(file, "%lf%c", hc->wccoef[wcn],
 			(wcn != hc->wccount - 1) ? ' ' : '\n') < 0) {
-				nd_seterror(ND_WRITETOFILEFERROR);
+				nd_seterror(ND_WRITEFILEERROR);
 				return (-1);
 			}
 
 	for (stn = 0; stn < hc->stagecount; ++stn)
 		if (fprintf(file, "%d %lf\n",
 			hc->stage[stn].wcc, hc->stage[stn].thres) < 0) {
-				nd_seterror(ND_WRITETOFILEFERROR);
+				nd_seterror(ND_WRITEFILEERROR);
 				return (-1);
 			}
 

@@ -5,7 +5,7 @@
 
 #include "nd_image.h"
 #include "nd_error.h"
-#include "np_edgedetect.h"
+#include "ed_edgedetect.h"
 
 #define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 
@@ -42,7 +42,7 @@ int main(int argc, char **argv)
 		return (-1);
 	}
 
-	if (np_canny(&img, mask, -1.0, -1.0) < 0)
+	if (ed_canny(&img, mask, -1.0, -1.0) < 0)
 		return (-1);
 
 	canny.data = malloc(sizeof(double) * img.w * img.h);

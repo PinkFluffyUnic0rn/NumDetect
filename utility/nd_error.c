@@ -2,6 +2,25 @@
 
 enum ND_ERROR nd_error;
 
+const char *terr[] = {
+	"Wrong function argument",
+	"Cannot allocate memory",
+	"Cannot open file",
+	"Cannot close file",
+	"Cannot open .png file",
+	"Wrong file format",
+	"Error in cairo function",
+	"Image argument has wrong parameters",
+	"Matrix argument has wrong parameters",
+	"Cannot read from file",
+	"Cannot write to file",
+	"Pipe call failed",
+	"Read call failed",
+	"Write call failed",
+	"Select call failed",
+	"Close call failed",
+};
+
 void nd_seterror(enum ND_ERROR err)
 {
 	nd_error = err;	
@@ -9,38 +28,8 @@ void nd_seterror(enum ND_ERROR err)
 
 const char *nd_strerror(enum ND_ERROR err)
 {
-	switch(err) {
-	case ND_INVALIDARG:
-		return "Wrong function argument";
-
-	case ND_ALLOCFAULT:
-		return "Cannot allocate memory";
-
-	case ND_FOPENERROR:
-		return "Cannot open file";
-
-	case ND_FCLOSEERROR:
-		return"Cannot close file";
-
-	case ND_OPENPNGERROR:
-		return "Cannot open .png file";
-
-	case ND_WRONGFORMAT:
-		return "Wrong file format";
-
-	case ND_CAIROERROR:
-		return "Error in cairo function";
-
-	case ND_INVALIDIMAGE:
-		return "Image argument has wrong parameters";
-
-	case ND_INVALIDMATRIX:
-		return "Matrix argument has wrong parameters";
-
-	case ND_READFILEERROR:
-		return "Cannot read file";
-
-	default:
+	if (err < 0 || err > ND_ERRORCOUNT)
 		return "Unknown error";
-	}
+
+	return terr[err];
 }
