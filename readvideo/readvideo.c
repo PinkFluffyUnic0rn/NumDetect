@@ -161,9 +161,11 @@ int readframe(AVFormatContext *s, AVCodecContext *vcodecc, int vstreamid,
 			
 			av_strerror(ret, buf, 255);
 			fprintf(stderr, "%s\n", buf);
+
+			return (-1);
 		}
 
-		return (-1);
+		return 1;
 	}
 		
 	if (pack.stream_index == vstreamid) {
@@ -192,9 +194,10 @@ int frametorgb(AVFrame *frame, int rgbw, int rgbh, uint8_t **rgbdata,
 	
 	if ((swsc = sws_getContext(frame->width, frame->height, frame->format,
 		rgbw, rgbh, AV_PIX_FMT_RGB24, SWS_BICUBIC, NULL, NULL, NULL))
-		== NULL)
+		== NULL) {
 		fprintf(stderr, "Cannot create a scaling context.\n");
 		return (-1);
+	}
 	
 	if ((*rgbdata = malloc(sizeof(uint8_t) * rgbw * rgbh * 3)) == NULL) {
 		fprintf(stderr, "Cannot allocate memory.\n");
@@ -349,15 +352,22 @@ int pbnexttimestamp(struct playbackstate *pbs)
 
 	if (tcurd > tframed) {
 		struct timespec twait;
-		
-		twait.tv_sec = floor(tcurd) - floor(tframed);
-		twait.tv_nsec = ((tcurd - floor(tcurd))
-			- (tframed - floor(tframed))) * 1.0e9;
+		double twaitd;
 
+		twaitd = tcurd - tframed;
+	
+		twait.tv_sec = floor(twaitd);
+		twait.tv_nsec = (twaitd - floor(twaitd)) * 1.0e9;
+		
 		if (nanosleep(&twait, NULL) < 0) {
+			printf("%ld\n %ld\n", twait.tv_sec, twait.tv_nsec);
+			printf("%lf %lf\n", tcurd - floor(tcurd),
+				tframed - floor(tframed));
+		
 			fprintf(stderr, "Cannot put process to sleep.\n");
 			return (-1);
 		}
+		
 	}
 
 	++(pbs->timestamp);
@@ -441,11 +451,15 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 		int isdecoded;
 		uint8_t *rgbdata;
 		int rgblinesize;
+		int retval;
 
 		do {
-			if (readframe(av->s, av->vcodecc, av->vstreamid,
-				av->frame, &(isdecoded)) < 0)
+			if ((retval = readframe(av->s, av->vcodecc,
+				av->vstreamid, av->frame, &(isdecoded))) < 0)
 				return (-1);
+
+			if (retval > 0)
+				return 0;
 		} while (!isdecoded);
 
 		if (frametorgb(av->frame, img->w, img->h,
@@ -471,7 +485,9 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 			return (-1);
 	}
 
-	return 0;
+	fprintf(stderr, "Unexpexted loop quit\n");
+
+	return (-1);
 }
 
 int main(int argc, char **argv)
@@ -492,15 +508,15 @@ int main(int argc, char **argv)
 			nd_strerror(nd_error));
 		return 1;
 	}
-
+	
 	if ((chpid = fork()) == 0) {
 		if (nd_psinitpostfork(1) < 0) {
 			fprintf(stderr, "nd_psinitpostfork: %s.\n",
 				nd_strerror(nd_error));
 			return 1;
 		}
-
-		if (scanloop(img, argv[2], argv[2]) < 0)
+		
+		if (scanloop(img, argv[2], argv[3]) < 0)
 			return 1;
 		
 		if (nd_psclose() < 0) {
@@ -520,9 +536,9 @@ int main(int argc, char **argv)
 
 		if (decodeloop(&av, img) < 0)
 			return 1;
-
+		
 		wait(&retval);
-
+		
 		if (nd_psclose() < 0) {
 			fprintf(stderr, "nd_psclose: %s.\n",
 				nd_strerror(nd_error));
