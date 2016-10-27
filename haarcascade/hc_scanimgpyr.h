@@ -9,5 +9,5 @@ struct hc_scanconfig {
 	int winhstep;
 };
 
-int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
+int hc_imgpyramidscan(struct hc_hcascade *hc, const struct nd_image *img,
 	struct hc_rect **newr, int *newrc, const struct hc_scanconfig *conf);

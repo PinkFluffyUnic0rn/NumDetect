@@ -15,9 +15,9 @@
 #include <cairo.h>
 
 #include "nd_image.h"
+#include "nd_procsync.h"
 #include "hc_hcascade.h"
 #include "hc_scanimgpyr.h"
-#include "hc_procsync.h"
 
 #define IMGWIDTH 640
 
@@ -48,17 +48,17 @@ int openinput(AVFormatContext **s, const char *pathname, int *vstreamid)
 
 	if ((ret = avformat_open_input(s, pathname, NULL, NULL)) < 0) {
 		char buf[255];
+	
 		av_strerror(ret, buf, 255);
 		fprintf(stderr, "%s\n", buf);
-
 		return (-1);
 	}
 	
 	if ((ret = avformat_find_stream_info(*s, NULL)) < 0) {
 		char buf[255];
-		av_strerror(ret, buf, 255);
-		fprintf(stderr, "%s\n", buf);
 
+		av_strerror(ret, buf, 255);	
+		fprintf(stderr, "%s\n", buf);
 		return (-1);
 	}
 
@@ -80,7 +80,7 @@ int openvideocodec(AVFormatContext *s, AVCodecContext **vcodecc, int vstreamid)
 
 	if ((vcodec = avcodec_find_decoder(
 		s->streams[vstreamid]->codec->codec_id)) == NULL) {
-		
+		fprintf(stderr, "Cannot find decoder.\n");
 		return (-1);
 	}
 
@@ -93,6 +93,7 @@ int openvideocodec(AVFormatContext *s, AVCodecContext **vcodecc, int vstreamid)
 
 	if ((ret = avcodec_open2(*vcodecc, vcodec, NULL)) < 0) {
 		char buf[255];
+
 		av_strerror(ret, buf, 255);
 		fprintf(stderr, "%s\n", buf);
 
@@ -124,12 +125,14 @@ int initavdata(struct avdata *av, const char *filepath)
 int imgcreateshared(struct nd_image **img, int w, int h, int format)
 {
 	size_t imgsz;
-	imgsz = sizeof(struct nd_image)
-		+ w * h * sizeof(double);
+	imgsz = sizeof(struct nd_image) + w * h * sizeof(double);
 
 	if ((*img = mmap(0, imgsz, PROT_READ | PROT_WRITE,
-		MAP_ANON | MAP_SHARED, -1, 0)) == MAP_FAILED)
+		MAP_ANON | MAP_SHARED, -1, 0)) == MAP_FAILED) {
+	
+		fprintf(stderr, "Cannot create shared memory mapping");
 		return (-1);
+	}
 
 	(*img)->w = w;
 	(*img)->h = h;
@@ -190,18 +193,21 @@ int frametorgb(AVFrame *frame, int rgbw, int rgbh, uint8_t **rgbdata,
 	if ((swsc = sws_getContext(frame->width, frame->height, frame->format,
 		rgbw, rgbh, AV_PIX_FMT_RGB24, SWS_BICUBIC, NULL, NULL, NULL))
 		== NULL)
+		fprintf(stderr, "Cannot create a scaling context.\n");
 		return (-1);
 	
 	if ((*rgbdata = malloc(sizeof(uint8_t) * rgbw * rgbh * 3)) == NULL) {
-		printf("Cannot allocate memory.\n");
+		fprintf(stderr, "Cannot allocate memory.\n");
 		return (-1);
 	}
 
 	*rgblinesize = rgbw * 3;
 
 	if (sws_scale(swsc, (const uint8_t **) frame->data, frame->linesize,
-		0, frame->height, rgbdata, rgblinesize) <= 0)
+		0, frame->height, rgbdata, rgblinesize) <= 0) {
+		fprintf(stderr, "Cannot scale a frame.\n");
 		return (-1);
+	}
 
 	sws_freeContext(swsc);
 	
@@ -318,8 +324,10 @@ int pbstateinit(struct playbackstate *pbs, double fr)
 	pbs->framerate = fr;
 	pbs->timestamp = 0;
 
-
-	clock_gettime(CLOCK_REALTIME, &(pbs->tstart));
+	if (clock_gettime(CLOCK_REALTIME, &(pbs->tstart)) < 0) {
+		fprintf(stderr, "Cannot get current time.\n");
+		return (-1);
+	}
 
 	return 0;
 }
@@ -330,7 +338,10 @@ int pbnexttimestamp(struct playbackstate *pbs)
 	double tcurd;
 	double tframed;
 
-	clock_gettime(CLOCK_REALTIME, &tcur);
+	if (clock_gettime(CLOCK_REALTIME, &tcur) < 0) {
+		fprintf(stderr, "Cannot get current time.\n");
+		return (-1);
+	}
 	
 	tcurd = 1.0 / pbs->framerate * pbs->timestamp;
 	tframed = (tcur.tv_sec - pbs->tstart.tv_sec)
@@ -343,10 +354,122 @@ int pbnexttimestamp(struct playbackstate *pbs)
 		twait.tv_nsec = ((tcurd - floor(tcurd))
 			- (tframed - floor(tframed))) * 1.0e9;
 
-		nanosleep(&twait, NULL);
+		if (nanosleep(&twait, NULL) < 0) {
+			fprintf(stderr, "Cannot put process to sleep.\n");
+			return (-1);
+		}
 	}
 
 	++(pbs->timestamp);
+
+	return 0;
+}
+
+int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
+{
+	struct hcdata hcd;
+
+	if (hc_hcascaderead(&(hcd.hc), hcpath) < 0) {
+		fprintf(stderr, "nd_hcascaderead: %s.\n",
+			nd_strerror(nd_error));
+		return (-1);
+	}
+
+	hcd.scanconf.scalestep = 0.9;
+	hcd.scanconf.winhstep = 1;
+	hcd.scanconf.winwstep = 1;
+
+	while (1) {
+		struct hc_rect *r;
+		int rc;
+
+		if (nd_pslock(1) < 0) {
+			fprintf(stderr, "nd_pslock: %s.\n",
+				nd_strerror(nd_error));
+			return (-1);
+		}
+
+		if (hc_imgpyramidscan(&(hcd.hc), img, &r, &rc,
+			&(hcd.scanconf)) < 0) {
+			fprintf(stderr, "nd_imgpyramidscan: %s.\n",
+				nd_strerror(nd_error));
+
+			return (-1);
+		}
+
+		if (rc) {
+			detectedtofile(img, r, rc, outputdir);
+			free(r);
+		}
+
+		if (nd_psunlock(1) < 0) {
+			fprintf(stderr, "nd_psunlock: %s.\n",
+				nd_strerror(nd_error));
+			return (-1);
+		}
+	}
+
+	return 0;
+}
+
+int rgbdatatoimg(uint8_t *rgbdata, int rgblinesize, struct nd_image *img)
+{
+	int x, y;
+	
+	for (y = 0; y < img->h; ++y)
+		for(x = 0; x < img->w; ++x) {
+			img->data[y * img->w + x]
+				= (rgbdata[y * rgblinesize + x * 3 + 0]
+					+ rgbdata[y * rgblinesize + x * 3 + 1]
+					+ rgbdata[y * rgblinesize + x * 3 + 2])
+					/ 3.0 / 255.0;
+		}
+
+	return 0;
+}
+
+int decodeloop(struct avdata *av, struct nd_image *img)
+{
+	struct playbackstate pbs;
+	AVRational tmpr;
+
+	tmpr = av->s->streams[av->vstreamid]->avg_frame_rate;
+	if (pbstateinit(&pbs, (double) tmpr.num / tmpr.den) < 0)
+		return 1;
+
+	while (1) {
+		int isdecoded;
+		uint8_t *rgbdata;
+		int rgblinesize;
+
+		do {
+			if (readframe(av->s, av->vcodecc, av->vstreamid,
+				av->frame, &(isdecoded)) < 0)
+				return (-1);
+		} while (!isdecoded);
+
+		if (frametorgb(av->frame, img->w, img->h,
+			&rgbdata, &rgblinesize) < 0)
+			return (-1);
+
+		if (nd_pstrylock(0)) {
+			rgbdatatoimg(rgbdata, rgblinesize, img);
+			
+			if (persptransformframe(img) < 0)
+				return (-1);
+			
+			if (nd_psunlock(0) < 0) {
+				fprintf(stderr, "nd_psunlock: %s.\n",
+					nd_strerror(nd_error));
+				return (-1);
+			}
+		}
+
+		free(rgbdata);
+
+		if (pbnexttimestamp(&pbs) < 0)
+			return (-1);
+	}
 
 	return 0;
 }
@@ -364,94 +487,47 @@ int main(int argc, char **argv)
 		* IMGWIDTH / av.vcodecc->width, ND_PF_GRAYSCALE) < 0)
 		return 1;
 
-	nd_psinitprefork();
+	if (nd_psinitprefork() < 0) {
+		fprintf(stderr, "nd_psinitprefork: %s.\n",
+			nd_strerror(nd_error));
+		return 1;
+	}
 
 	if ((chpid = fork()) == 0) {
-		struct hcdata hcd;
-	
-		if (hc_hcascaderead(&(hcd.hc), argv[2]) < 0) {
-			fprintf(stderr, "nd_hcascaderead: %s.\n",
+		if (nd_psinitpostfork(1) < 0) {
+			fprintf(stderr, "nd_psinitpostfork: %s.\n",
 				nd_strerror(nd_error));
 			return 1;
 		}
 
-		hcd.scanconf.scalestep = 0.9;
-		hcd.scanconf.winhstep = 1;
-		hcd.scanconf.winwstep = 1;
-
-		while (1) {
-			struct hc_rect *r;
-			int rc;
-
-			nd_pslock(1);
-
-			if (nd_imgpyramidscan(&(hcd.hc), img, &r, &rc,
-				&(hcd.scanconf)) < 0) {
-				fprintf(stderr, "nd_imgpyramidscan: %s.\n",
-					nd_strerror(nd_error));
-	
-				return (-1);
-			}
-
-			if (rc) {
-				detectedtofile(img, r, rc, argv[3]);
-				free(r);
-			}
-	
-			nd_psunlock(1);
-		}
+		if (scanloop(img, argv[2], argv[2]) < 0)
+			return 1;
 		
-		nd_psclose();
+		if (nd_psclose() < 0) {
+			fprintf(stderr, "nd_psclose: %s.\n",
+				nd_strerror(nd_error));
+			return 1;
+		}
 	}
 	else {
-		struct playbackstate pbs;
-		AVRational tmpr;
 		int retval;
-
-		tmpr = av.s->streams[av.vstreamid]->avg_frame_rate;	
-		pbstateinit(&pbs, (double) tmpr.num / tmpr.den);
-
-		while (1) {
-			int isdecoded;
-			uint8_t *rgbdata;
-			int rgblinesize;
-			int x, y;
-
-			do {
-				if (readframe(av.s, av.vcodecc, av.vstreamid,
-					av.frame, &(isdecoded)) < 0)
-					return 1;
-			} while (!isdecoded);
-
-			if (frametorgb(av.frame, img->w, img->h,
-				&rgbdata, &rgblinesize) < 0)
-				return 1;
-
-			if (nd_pstrylock(0)) {
-				for (y = 0; y < img->h; ++y)
-					for(x = 0; x < img->w; ++x) {
-						img->data[y * img->w + x]
-							= (rgbdata[y * rgblinesize + x * 3 + 0]
-							+ rgbdata[y * rgblinesize + x * 3 + 1]
-							+ rgbdata[y * rgblinesize + x * 3 + 2])
-							/ 3.0 / 255.0;
-					}
-				
-				if (persptransformframe(img) < 0)
-					return 1;
-				
-				nd_psunlock(0);
-			}
-
-			free(rgbdata);
-
-			pbnexttimestamp(&pbs);
-
+	
+		if (nd_psinitpostfork(0) < 0) {
+			fprintf(stderr, "nd_psinitpostfork: %s.\n",
+				nd_strerror(nd_error));
+			return 1;
 		}
+
+		if (decodeloop(&av, img) < 0)
+			return 1;
 
 		wait(&retval);
 
-		nd_psclose();
+		if (nd_psclose() < 0) {
+			fprintf(stderr, "nd_psclose: %s.\n",
+				nd_strerror(nd_error));
+			return 1;
+		}
 	}
 
 	av_frame_unref(av.frame);

@@ -1,11 +1,16 @@
 CC=gcc
-SRC=readvideo.c hc_procsync.c hc_hcascade.c hc_rect.c hc_scanimgpyr.c
+SRC=readvideo.c
+HCSRC=../haarcascade/hc_hcascade.c ../haarcascade/hc_rect.c\
+../haarcascade/hc_scanimgpyr.c
+UTILSRC=../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c\
+../utility/nd_procsync.c
 OPT=-Wall
 LIB=-lavcodec -lavutil -lavformat -lswscale -pthread -lm \
 `pkg-config --cflags --libs gtk+-3.0`
 BIN=readvideo
-SRCINC = ../utility
-UTILSRC = ../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c
+UTILINC=../utility
+HCINC=../haarcascade
 
 all:
-	$(CC) $(SRC) $(UTILSRC) -I $(SRCINC) -o $(BIN) $(OPT) $(LIB) 
+	$(CC) $(SRC) $(HCSRC) $(UTILSRC) -I$(UTILINC) -I$(HCINC) \
+	-o $(BIN) $(OPT) $(LIB) 

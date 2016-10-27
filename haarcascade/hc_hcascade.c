@@ -303,7 +303,8 @@ static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 		return (-1);
 	}
 	
-	if ((hc->wc != 0 && hc->wccoef = malloc(sizeof(double) * hc->wccount))
+	if ((hc->wc != 0)
+		&& (hc->wccoef = malloc(sizeof(double) * hc->wccount))
 		== NULL) {
 		hc_safefree((void **)&(hc->wc));
 		
@@ -366,8 +367,11 @@ int hc_hcascaderead(struct hc_hcascade *hc, const char *hcpath)
 		return (-1);
 	}
 
-	fscanf(file, "%d %d %d %d %d\n", &(hc->ww), &(hc->wh), &(hc->featurec),
-		&(hc->wccount), &(hc->stagecount));
+	if (fscanf(file, "%d %d %d %d %d\n", &(hc->ww), &(hc->wh), &(hc->featurec),
+		&(hc->wccount), &(hc->stagecount)) == EOF) {
+			nd_seterror(ND_READFILEERROR);
+			return (-1);
+	}
 
 	if (hc->featurec > 0) {
 		if (hc_readfeatures(file, hc) < 0)

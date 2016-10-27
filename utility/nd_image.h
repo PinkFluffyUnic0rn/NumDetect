@@ -39,10 +39,6 @@ int nd_imgnormalize(struct nd_image *img, int avr, int dev);
 
 int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 	struct nd_image *imgout);
-/*
-int nd_imgscale(const struct nd_image *inimg, double wrel, double hrel,
-	struct nd_image *outimg);
-*/
 
 int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image *outimg);

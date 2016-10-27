@@ -49,7 +49,7 @@ int main(int argc, char **argv)
 	struct timespec ts, te;
 	clock_gettime(CLOCK_REALTIME, &ts);
 
-	imgpyramidscan(&hc, &img, &newr, &newrc, &scanconf);
+	hc_imgpyramidscan(&hc, &img, &newr, &newrc, &scanconf);
 
 	clock_gettime(CLOCK_REALTIME, &te);
 	printf("%lf\n", te.tv_sec + te.tv_nsec * 1e-9

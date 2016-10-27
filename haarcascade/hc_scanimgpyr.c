@@ -14,7 +14,7 @@
 
 #include "hc_scanimgpyr.h"
 
-static int fastimgscan(struct nd_image *img, double *sd,
+static int hc_fastimgscan(struct nd_image *img, double *sd,
 	struct hc_hcascade *hc, struct hc_rect **r, int *roffset, int *rmax,
 	const struct hc_scanconfig *conf)
 {
@@ -53,7 +53,7 @@ static int fastimgscan(struct nd_image *img, double *sd,
 	return 0;
 }
 
-int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
+int hc_imgpyramidscan(struct hc_hcascade *hc, const struct nd_image *img,
 	struct hc_rect **newr, int *newrc, const struct hc_scanconfig *conf)
 {
 	double d;
@@ -76,16 +76,17 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		int prevrc;
 		int x, y;
 
-		if (nd_imgscalebilinear(img, d, d, &scaledimg) < 0)
+		if (nd_imgscalebilinear(img, d, d, &scaledimg) < 0) {		
 			return (-1);
+		}
 
 		if (scaledimg.w < hc->ww || scaledimg.h < hc->wh) {
 			nd_imgdestroy(&scaledimg);
 			break;
 		}
 
-		if (nd_imgcreate(&scaledimgsq, scaledimg.w, scaledimg.h, 1)
-			< 0) {
+		if (nd_imgcreate(&scaledimgsq, scaledimg.w, scaledimg.h,
+			img->format) < 0) {
 			nd_imgdestroy(&scaledimg);
 			return (-1);
 		}
@@ -118,7 +119,6 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		
 			return (-1);
 		}
-
 
 		for (y = 0; y < scaledimg.h - hc->wh; y += 1)
 			for (x = 0; x < scaledimg.w - hc->ww; x += 1) {
@@ -197,15 +197,15 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 			}
 
 		prevrc = rc;
-		if (fastimgscan(&scaledimg, sd, hc, &r, &rc, &rmax, conf)
+		if (hc_fastimgscan(&scaledimg, sd, hc, &r, &rc, &rmax, conf)
 			< 0) {
 			free(sd);
 			nd_imgdestroy(&scaledimg);
 			nd_imgdestroy(&scaledimgsq);
-			
+
 			return -1;
 		}
-	
+		
 		for (rn = prevrc; rn < rc; ++rn) {
 			r[rn].x0 /= d;
 			r[rn].y0 /= d;
@@ -220,10 +220,7 @@ int imgpyramidscan(struct hc_hcascade *hc, struct nd_image *img,
 		nd_imgdestroy(&scaledimgsq);
 	} while (1);
 	
-	if (rc <= 0)
-		return (-1);
-
-	if (hc_conrect(r, rc, newr, newrc) < 0)
+	if (rc > 0 && hc_conrect(r, rc, newr, newrc) < 0)
 		return (-1);
 
 	return 0;
