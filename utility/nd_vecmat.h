@@ -3,6 +3,10 @@
 
 #define EPSILON 0.00001
 
+struct nd_vector2 {
+	double x, y;
+};
+
 struct nd_vector3 {
 	double x, y, z;
 };

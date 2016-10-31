@@ -18,6 +18,7 @@
 #include "nd_procsync.h"
 #include "hc_hcascade.h"
 #include "hc_scanimgpyr.h"
+#include "ed_findborder.h"
 
 #define IMGWIDTH 640
 
@@ -43,6 +44,7 @@ struct playbackstate {
 int openinput(AVFormatContext **s, const char *pathname, int *vstreamid)
 {
 	int ret;
+	int sn;
 	
 	*s = NULL;
 
@@ -61,8 +63,6 @@ int openinput(AVFormatContext **s, const char *pathname, int *vstreamid)
 		fprintf(stderr, "%s\n", buf);
 		return (-1);
 	}
-
-	int sn;
 
 	for (sn = 0; sn < (*s)->nb_streams; ++sn)
 		if ((*s)->streams[sn]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
@@ -125,18 +125,20 @@ int initavdata(struct avdata *av, const char *filepath)
 int imgcreateshared(struct nd_image **img, int w, int h, int format)
 {
 	size_t imgsz;
-	imgsz = sizeof(struct nd_image) + w * h * sizeof(double);
+
+	imgsz = sizeof(struct nd_image)
+		+ sizeof(double) * w * h * nd_imgchanscount(format);
 
 	if ((*img = mmap(0, imgsz, PROT_READ | PROT_WRITE,
 		MAP_ANON | MAP_SHARED, -1, 0)) == MAP_FAILED) {
 	
-		fprintf(stderr, "Cannot create shared memory mapping");
+		fprintf(stderr, "Cannot create shared memory mapping\n");
 		return (-1);
 	}
 
 	(*img)->w = w;
 	(*img)->h = h;
-	(*img)->format = ND_PF_GRAYSCALE;
+	(*img)->format = format;
 	(*img)->data = (void *) (*img) + sizeof(struct nd_image);
 
 	return 0;
@@ -146,7 +148,7 @@ int imgdestroyshared(struct nd_image **img)
 {
 	if (munmap(*img, sizeof(struct nd_image)
 		+ (*img)->w * (*img)->h * sizeof(double)) < 0) {
-		fprintf(stderr, "Cannot destroy shared memory mapping");
+		fprintf(stderr, "Cannot destroy shared memory mapping\n");
 		return (-1);
 	}
 
@@ -230,9 +232,8 @@ int frametorgb(AVFrame *frame, int rgbw, int rgbh, uint8_t **rgbdata,
 	return 0;
 }
 
-int persptransformframe(struct nd_image *frame)
+int getperspmat(int w, int h, struct nd_matrix3 *m)
 {
-	struct nd_matrix3 m;
 	double inpoints[8];
 	double outpoints[8];
 
@@ -241,26 +242,20 @@ int persptransformframe(struct nd_image *frame)
 	inpoints[4] = 367; inpoints[5] = 272;
 	inpoints[6] = 305; inpoints[7] = 255;
 
-	outpoints[0] = 100 + frame->w / 2 - 4 * 31 / 3;
-	outpoints[1] = 100 + frame->h / 2 - 4 * 7 / 3;
+	outpoints[0] = 100 + w / 2 - 4 * 31 / 3;
+	outpoints[1] = 100 + h / 2 - 4 * 7 / 3;
 	
-	outpoints[2] = 100 + frame->w / 2 + 4 * 31 / 3;
-	outpoints[3] = 100 + frame->h / 2 - 4 * 7 / 3;
+	outpoints[2] = 100 + w / 2 + 4 * 31 / 3;
+	outpoints[3] = 100 + h / 2 - 4 * 7 / 3;
 	
-	outpoints[4] = 100 + frame->w / 2 + 4 * 31 / 3;
-	outpoints[5] = 100 + frame->h / 2 + 4 * 7 / 3;
+	outpoints[4] = 100 + w / 2 + 4 * 31 / 3;
+	outpoints[5] = 100 + h / 2 + 4 * 7 / 3;
 	
-	outpoints[6] = 100 + frame->w / 2 - 4 * 31 / 3;
-	outpoints[7] = 100 + frame->h / 2 + 4 * 7 / 3;
+	outpoints[6] = 100 + w / 2 - 4 * 31 / 3;
+	outpoints[7] = 100 + h / 2 + 4 * 7 / 3;
 
-	if (nd_getpersptransform(inpoints, outpoints, &m) < 0) {
+	if (nd_getpersptransform(inpoints, outpoints, m) < 0) {
 		fprintf(stderr, "nd_getpersptransform: %s.\n",
-			nd_strerror(nd_error));
-		return (-1);
-	}
-
-	if (nd_imgapplytransform(frame, &m) < 0) {
-		fprintf(stderr, "nd_imgapplytransform: %s.\n",
 			nd_strerror(nd_error));
 		return (-1);
 	}
@@ -268,10 +263,58 @@ int persptransformframe(struct nd_image *frame)
 	return 0;
 }
 
-int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc,
+int recttoorig(struct hc_rect *r, struct nd_matrix3 *perspmat,
+	double addtop, double addbot, double imgtoorigrel,
+	struct nd_vector3 p[4])
+{
+	p[0].x = (double) r->x0;
+	p[0].y = (double) r->y0 - addtop;
+	p[0].z = 1.0;
+	
+	p[1].x = (double) r->x1;
+	p[1].y = (double) r->y0 - addtop;
+	p[1].z = 1.0;
+
+	p[2].x = (double) r->x1;
+	p[2].y = (double) r->y1 + addbot;
+	p[2].z = 1.0;
+
+	p[3].x = (double) r->x0;
+	p[3].y = (double) r->y1 + addbot;
+	p[3].z = 1.0;
+
+	nd_v3m3mult(p + 0, perspmat, p + 0);
+	nd_v3m3mult(p + 1, perspmat, p + 1);
+	nd_v3m3mult(p + 2, perspmat, p + 2);
+	nd_v3m3mult(p + 3, perspmat, p + 3);
+
+	p[0].x /= p[0].z;
+	p[0].y /= p[0].z;
+	p[1].x /= p[1].z;
+	p[1].y /= p[1].z;
+	p[2].x /= p[2].z;
+	p[2].y /= p[2].z;
+	p[3].x /= p[3].z;
+	p[3].y /= p[3].z;
+
+	p[0].x *= imgtoorigrel;
+	p[0].y *= imgtoorigrel;
+	p[1].x *= imgtoorigrel;
+	p[1].y *= imgtoorigrel;
+	p[2].x *= imgtoorigrel;
+	p[2].y *= imgtoorigrel;
+	p[3].x *= imgtoorigrel;
+	p[3].y *= imgtoorigrel;
+
+	return 0;
+}
+
+int detectedtofile(struct nd_image *img, struct nd_image *imgorig,
+	struct nd_matrix3 *perspmat, struct hc_rect *r, int rc,
 	const char *outputdir)
 {
 	char imgpath[255];
+	char imgpathnormalized[255];
 	static int foundn = 0;
 	int rn;
 
@@ -279,46 +322,122 @@ int detectedtofile(struct nd_image *img, struct hc_rect *r, int rc,
 		fprintf(stderr, "sprintf: %s.\n", strerror(errno));
 		return (-1);
 	}
-	
-	if (nd_imgwrite(img, imgpath) < 0) {
+
+	if (nd_imgwrite(imgorig, imgpath) < 0) {
 		fprintf(stderr, "nd_imgwrite: %s.\n",
 			nd_strerror(nd_error));
 		return (-1);
 	}
-	
-	for (rn = 0; rn < rc; ++rn) {
+
+	for (rn = 0; rn < rc; ++rn) {	
+		struct nd_vector3 p[4];
+		int winw, winh;
+		double addtop, addbot;
+
 		if (sprintf(imgpath, "%s/%d_%d.png", outputdir, foundn, rn)
 			< 0) {
 			fprintf(stderr, "sprintf: %s.\n", strerror(errno));
 			return (-1);
 		}
+
+		if (sprintf(imgpathnormalized, "%s/%d_%dn.png",
+			outputdir, foundn, rn) < 0) {
+			fprintf(stderr, "sprintf: %s.\n", strerror(errno));
+			return (-1);
+		}
+
+		addtop = (double) abs(r[rn].y0 - r[rn].y1) * 0.2;
+		addbot = (double) abs(r[rn].y0 - r[rn].y1) * 0.4;
+
+		recttoorig(r + rn, perspmat, addtop, addbot,
+			(double) imgorig->w / IMGWIDTH, p);
 		
-		double rh = abs(r[rn].y0 - r[rn].y1);
+		winw = (r[rn].x1 - r[rn].x0)
+				* (double) imgorig->w / IMGWIDTH;
+		winh = (r[rn].y1 - r[rn].y0 + addtop + addbot)
+				* (double) imgorig->w / IMGWIDTH;
 
-		r[rn].y0 = (int) (r[rn].y0) - (rh * 0.15);
-		r[rn].y1 = r[rn].y1 + (rh * 0.15);
-
-		if (r[rn].y0 >= 0 && r[rn].y1 < img->h) {
+		if (winw <= imgorig->w && winh <= imgorig->h) {	
 			struct nd_image imginwin;
+			struct nd_matrix3 persporig;
+			double inpoints[8];
+			double outpoints[8];
 
-			if (nd_imgcreate(&imginwin, abs(r[rn].x1 - r[rn].x0),
-				abs(r[rn].y1 - r[rn].y0), img->format) < 0) {
-				fprintf(stderr, "nd_imgcreate: %s.\n",
+			inpoints[0] = p[0].x; inpoints[1] = p[0].y;
+			inpoints[2] = p[1].x; inpoints[3] = p[1].y;
+			inpoints[4] = p[2].x; inpoints[5] = p[2].y;
+			inpoints[6] = p[3].x; inpoints[7] = p[3].y;
+
+			outpoints[0] = 0; outpoints[1] = 0;
+			outpoints[2] = winw; outpoints[3] = 0;
+			outpoints[4] = winw; outpoints[5] = winh;
+			outpoints[6] = 0; outpoints[7] = winh;
+
+			if (nd_getpersptransform(inpoints, outpoints,
+				&persporig) < 0) {
+				fprintf(stderr, "nd_getpersptransform: %s.\n",
+					nd_strerror(nd_error));
+				return (-1);
+			}
+
+			if (nd_imgapplytransform(imgorig, &persporig) < 0) {
+				fprintf(stderr, "nd_imgapplytransform: %s.\n",
 					nd_strerror(nd_error));
 				return (-1);
 			}
 			
-			if (nd_imgcrop(img, r[rn].x0, r[rn].y0,
-				abs(r[rn].x1 - r[rn].x0),
-				abs(r[rn].y1 - r[rn].y0), &imginwin) < 0) {
+			if (nd_imgcreate(&imginwin, winw, winh,
+				imgorig->format) < 0) {
+				fprintf(stderr, "nd_imgcreate: %s.\n",
+					nd_strerror(nd_error));
+				return (-1);
+			}
+	
+			if (nd_imgcrop(imgorig, 0, 0, winw, winh,
+				&imginwin) < 0) {
 				nd_imgdestroy(&imginwin);
 				
 				fprintf(stderr, "nd_imgcrop: %s.\n",
 					nd_strerror(nd_error));
 				return (-1);
 			}
-			
+		
 			if (nd_imgwrite(&imginwin, imgpath) < 0) {
+				nd_imgdestroy(&imginwin);
+				
+				fprintf(stderr, "nd_imgwrite: %s.\n",
+					nd_strerror(nd_error));
+				return (-1);
+			}
+		
+		
+			if (nd_imghsvval(&imginwin) < 0) {
+				fprintf(stderr, "nd_imghsvval: %s\n",
+					nd_strerror(nd_error));
+				return 1;
+			}
+		
+			ed_findborder(&imginwin, inpoints);
+
+			outpoints[0] = 0.0; outpoints[1] = 0.0;
+			outpoints[2] = imginwin.w; outpoints[3] = 0.0;
+			outpoints[4] = imginwin.w; outpoints[5] = imginwin.h;
+			outpoints[6] = 0.0; outpoints[7] = imginwin.h;
+
+			if (nd_getpersptransform(inpoints, outpoints,
+				&persporig) < 0) {
+				fprintf(stderr, "nd_getpersptransform: %s.\n",
+					nd_strerror(nd_error));
+				return 1;
+			}
+
+			if (nd_imgapplytransform(&imginwin, &persporig) < 0) {
+				fprintf(stderr, "nd_imgapplytransform: %s.\n",
+					nd_strerror(nd_error));
+				return 1;
+			}
+			
+			if (nd_imgwrite(&imginwin, imgpathnormalized) < 0) {
 				nd_imgdestroy(&imginwin);
 				
 				fprintf(stderr, "nd_imgwrite: %s.\n",
@@ -383,7 +502,8 @@ int pbnexttimestamp(struct playbackstate *pbs)
 	return 0;
 }
 
-int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
+int scanloop(struct nd_image *img, struct nd_image *imgorig,
+	const char *hcpath, const char *outputdir)
 {
 	struct hcdata hcd;
 
@@ -398,6 +518,7 @@ int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 	hcd.scanconf.winwstep = 1;
 
 	while (1) {
+		struct nd_matrix3 perspmat;
 		struct hc_rect *r;
 		int rc;
 
@@ -410,6 +531,15 @@ int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 		if (img->data == NULL)
 			return 0;
 
+		if (getperspmat(img->w, img->h, &perspmat) < 0)
+			return (-1);
+			
+		if (nd_imgapplytransform(img, &perspmat) < 0) {
+			fprintf(stderr, "nd_imgapplytransform: %s.\n",
+				nd_strerror(nd_error));
+			return (-1);
+		}
+
 		if (hc_imgpyramidscan(&(hcd.hc), img, &r, &rc,
 			&(hcd.scanconf)) < 0) {
 			fprintf(stderr, "nd_imgpyramidscan: %s.\n",
@@ -419,7 +549,8 @@ int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 		}
 
 		if (rc) {
-			detectedtofile(img, r, rc, outputdir);
+			detectedtofile(img, imgorig, &perspmat,
+				r, rc, outputdir);
 			free(r);
 		}
 
@@ -434,23 +565,55 @@ int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 	return (-1);
 }
 
+int rgbtograypix(uint8_t *rgbdata, int rgblinesize, struct nd_image *img,
+	int x, int y)
+{
+	img->data[y * img->w + x]
+		= (rgbdata[y * rgblinesize + x * 3 + 0]
+			+ rgbdata[y * rgblinesize + x * 3 + 1]
+			+ rgbdata[y * rgblinesize + x * 3 + 2])
+			/ 3.0 / 255.0;
+
+	return 0;
+}
+
+int rgbtorgbpix(uint8_t *rgbdata, int rgblinesize, struct nd_image *img,
+	int x, int y)
+
+{
+	img->data[(y * img->w + x)
+		* nd_imgchanscount(img->format) + 0]
+		= rgbdata[y * rgblinesize + x * 3 + 2]
+		/ 255.0;
+	img->data[(y * img->w + x)
+		* nd_imgchanscount(img->format) + 1]
+		= rgbdata[y * rgblinesize + x * 3 + 1]
+		/ 255.0;
+	img->data[(y * img->w + x)
+		* nd_imgchanscount(img->format) + 2]
+		= rgbdata[y * rgblinesize + x * 3 + 1]
+		/ 255.0;
+
+	return 0;
+}
+
 int rgbdatatoimg(uint8_t *rgbdata, int rgblinesize, struct nd_image *img)
 {
 	int x, y;
 	
 	for (y = 0; y < img->h; ++y)
 		for(x = 0; x < img->w; ++x) {
-			img->data[y * img->w + x]
-				= (rgbdata[y * rgblinesize + x * 3 + 0]
-					+ rgbdata[y * rgblinesize + x * 3 + 1]
-					+ rgbdata[y * rgblinesize + x * 3 + 2])
-					/ 3.0 / 255.0;
-		}
+			if (img->format == ND_PF_GRAYSCALE)
+				rgbtograypix(rgbdata, rgblinesize, img, x, y);
+			else
+				rgbtorgbpix(rgbdata, rgblinesize, img, x, y);
+		}			
 
 	return 0;
 }
 
-int decodeloop(struct avdata *av, struct nd_image *img)
+int decodeloop(struct avdata *av, struct nd_image *img,
+	struct nd_image *imgorig)
 {
 	struct playbackstate pbs;
 	AVRational tmpr;
@@ -462,8 +625,12 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 	while (1) {
 		int isdecoded;
 		uint8_t *rgbdata;
+		uint8_t *rgbdataorig;
 		int rgblinesize;
+		int rgblinesizeorig;
 		int retval;
+
+		isdecoded = 0;
 
 		do {
 			if ((retval = readframe(av->s, av->vcodecc,
@@ -478,11 +645,13 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 			&rgbdata, &rgblinesize) < 0)
 			return (-1);
 
+		if (frametorgb(av->frame, imgorig->w, imgorig->h,
+			&rgbdataorig, &rgblinesizeorig) < 0)
+			return (-1);
+
 		if (nd_pstrylock(0)) {
 			rgbdatatoimg(rgbdata, rgblinesize, img);
-			
-			if (persptransformframe(img) < 0)
-				return (-1);
+			rgbdatatoimg(rgbdataorig, rgblinesizeorig, imgorig);
 			
 			if (nd_psunlock(0) < 0) {
 				fprintf(stderr, "nd_psunlock: %s.\n",
@@ -506,12 +675,17 @@ int main(int argc, char **argv)
 	int chpid;
 	struct avdata av;
 	struct nd_image *img;
+	struct nd_image *imgorig;
 
 	if (initavdata(&av, argv[1]) < 0)
 		return 1;
-
+	
 	if (imgcreateshared(&img, IMGWIDTH, av.vcodecc->height
 		* IMGWIDTH / av.vcodecc->width, ND_PF_GRAYSCALE) < 0)
+		return 1;
+
+	if (imgcreateshared(&imgorig, av.vcodecc->width, av.vcodecc->height,
+		ND_PF_RGB) < 0)
 		return 1;
 
 	if (nd_psinitprefork() < 0) {
@@ -527,7 +701,7 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		
-		if (scanloop(img, argv[2], argv[3]) < 0)
+		if (scanloop(img, imgorig, argv[2], argv[3]) < 0)
 			return 1;
 		
 		if (nd_psclose(1) < 0) {
@@ -546,7 +720,7 @@ int main(int argc, char **argv)
 			return 1;
 		}
 
-		if (decodeloop(&av, img) < 0)
+		if (decodeloop(&av, img, imgorig) < 0)
 			return 1;
 	
 		if (nd_pslock(0) < 0) {
@@ -574,6 +748,9 @@ int main(int argc, char **argv)
 	}
 
 	if (imgdestroyshared(&img) < 0)
+		return 1;
+
+	if (imgdestroyshared(&imgorig) < 0)
 		return 1;
 
 	av_frame_unref(av.frame);

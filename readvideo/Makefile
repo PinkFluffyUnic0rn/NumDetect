@@ -2,6 +2,8 @@ CC=gcc
 SRC=readvideo.c
 HCSRC=../haarcascade/hc_hcascade.c ../haarcascade/hc_rect.c\
 ../haarcascade/hc_scanimgpyr.c
+EDSRC=../edgedetect/ed_fft.c ../edgedetect/ed_edgedetect.c \
+../edgedetect/ed_findborder.c
 UTILSRC=../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c\
 ../utility/nd_procsync.c
 OPT=-Wall
@@ -10,7 +12,8 @@ LIB=-lavcodec -lavutil -lavformat -lswscale -pthread -lm \
 BIN=readvideo
 UTILINC=../utility
 HCINC=../haarcascade
+EDINC=../edgedetect
 
 all:
-	$(CC) $(SRC) $(HCSRC) $(UTILSRC) -I$(UTILINC) -I$(HCINC) \
-	-o $(BIN) $(OPT) $(LIB) 
+	$(CC) $(SRC) $(HCSRC) $(EDSRC) $(UTILSRC) \
+	 -I$(HCINC) -I$(EDINC) -I$(UTILINC) -o $(BIN) $(OPT) $(LIB) 
