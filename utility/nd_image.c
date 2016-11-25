@@ -594,7 +594,7 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 		return (-1);
 	}
 
-	if (!nd_imgisvalid(inimg) || inimg->format != ND_PF_GRAYSCALE) {
+	if (!nd_imgisvalid(inimg)) {
 		nd_seterror(ND_INVALIDIMAGE);
 		return (-1);
 	}

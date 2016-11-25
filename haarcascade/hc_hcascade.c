@@ -977,6 +977,8 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
 		hc->stage[0].thres += hc->wccoef[wcn];
 
+	hc->stage[0].thres *= 0.5;
+
 	return 0;
 }
 
