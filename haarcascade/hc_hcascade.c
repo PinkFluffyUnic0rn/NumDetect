@@ -4,6 +4,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <limits.h>
+#include <assert.h>
 
 #include "hc_hcascade.h"
 #include "nd_error.h"
@@ -51,26 +52,23 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 	int imgn;
 	int imgnn;
 
-	if (ts == NULL || hcpath == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(ts != NULL || hcpath != NULL);
 
 	if ((file = fopen(hcpath, "r")) == NULL) {
 		nd_seterror(ND_FOPENERROR);
-		return (-1);
+		goto fopenerror;
 	}
 
 	if (fscanf(file, "%d %d\n", &goodc, &badc) < 0) {
 		nd_seterror(ND_FOPENERROR);
-		return (-1);
+		goto scantexcounterror;
 	}
 	
 	ts->imgc = goodc + badc;
 	
 	if ((ts->img = malloc(sizeof(struct nd_image) * ts->imgc)) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto imgmallocerror;
 	}
 	
 	for (imgn = 0; imgn < ts->imgc; ++imgn) {
@@ -79,51 +77,54 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 	
 		strsz = 0;
 		if (getline(&imgpath, &strsz, file) <= 0) {
-			hc_safefree((void **)&imgpath);
-			goto returnerror;
+			hc_safefree((void **) &imgpath);
+			goto getlineerror;
 		}
 	
 		imgpath[strlen(imgpath) - 1] = '\0';
 
 		if (nd_imgread(imgpath, ts->img + imgn) < 0) {
-			hc_safefree((void **)&imgpath);
-			goto returnerror;
+			hc_safefree((void **) &imgpath);
+			goto imgreaderror;
 		}
 
 		if (nd_imggrayscale(ts->img + imgn) < 0) {
-			hc_safefree((void **)&imgpath);
-			goto returnerror;
+			hc_safefree((void **) &imgpath);
+			goto imggrayscalerror;
 		}
 			
 		hc_safefree((void **)&imgpath);
 	}
 	
 	if ((ts->isgood = malloc(sizeof(int) * ts->imgc)) == NULL)
-		goto returnerror;
+		goto isgoodmallocerror;
 
 	for (imgn = 0; imgn < ts->imgc; ++imgn)
 		ts->isgood[imgn] = imgn < goodc ? 1 : 0;
 
 	return 0;
 
-returnerror:
+getlineerror:
+imgreaderror:
+imggrayscalerror:
+isgoodmallocerror:
 	for (imgnn = 0; imgnn < imgn; ++imgnn)
 		nd_imgdestroy(ts->img + imgnn);
 
-	hc_safefree((void **)&(ts->img));
+	hc_safefree((void **) &(ts->img));
 			
 	nd_seterror(ND_READFILEERROR);
+fopenerror:
+scantexcounterror:
+imgmallocerror:
 	return (-1);
 }
 
 int hc_create(struct hc_hcascade *hc, int ww, int wh, 
 	const struct nd_image *feature, int featurec)
 {
-	if (hc == NULL || ww <= 0 || wh <= 0
-		|| feature == NULL || featurec <= 0) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(hc != NULL || ww > 0 || wh > 0
+		|| feature != NULL || featurec > 0);
 
 	hc->wh = wh;
 	hc->ww = ww;
@@ -168,10 +169,16 @@ static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 {
 	int fn;
 
+	if (hc->featurec == 0) {
+		hc->feature = NULL;
+		
+		return 0;
+	}
+	
 	if ((hc->feature = malloc(sizeof(struct nd_image) * hc->featurec))
 		== NULL) {
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto featuremallocerror;
 	}
 
 	for (fn = 0; fn < hc->featurec; ++fn) {
@@ -179,44 +186,52 @@ static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 		int pixn;
 
 		if (fscanf(file, "%d %d", &w, &h) < 0) {
-			hc_safefree((void **)&(hc->feature));
-			
 			nd_seterror(ND_READFILEERROR);
-			return (-1);
+			goto scansizeerror;
 		}
 
-		if (nd_imgcreate(hc->feature + fn, w, h, 1) < 0) {
-			hc_safefree((void **)&(hc->feature));
-			return (-1);
-		}
+		if (nd_imgcreate(hc->feature + fn, w, h, 1) < 0)
+			goto imgcreateerror;
 		
 		for (pixn = 0; pixn < w * h; ++pixn)
 			if (fscanf(file, "%lf", hc->feature[fn].data + pixn)
 				< 0) {
-				hc_safefree((void **)&(hc->feature));
-				
 				nd_seterror(ND_READFILEERROR);
-				return (-1);
+				goto scanpixelerror;			
 			}
 	}
 	
 	return 0;
+	
+scansizeerror:
+imgcreateerror:
+scanpixelerror:
+	hc_safefree((void **) &(hc->feature));
+		
+featuremallocerror:
+	return (-1);
 }
 
 static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 {
 	int wcn;
 
+	if (hc->wccount == 0) {
+		hc->wc = NULL;
+		hc->wccoef = NULL;
+		
+		return 0;
+	}
+	
 	if ((hc->wc = malloc(sizeof(struct hc_wclassifier) * hc->wccount))
 		== NULL) {
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto wcmallocerror;
 	}
 	
 	if ((hc->wccoef = malloc(sizeof(double) * hc->wccount)) == NULL) {
-		hc_safefree((void **)&(hc->wc));
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);	
+		goto wccoefmallocerror;
 	}
 
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
@@ -224,17 +239,27 @@ static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 			&(hc->wc[wcn].x), &(hc->wc[wcn].y),
 			&(hc->wc[wcn].w), &(hc->wc[wcn].h),
 			&(hc->wc[wcn].ineqdir), &(hc->wc[wcn].thres)) == EOF) {
-			hc_safefree((void **)&(hc->wc));
-			hc_safefree((void **)&(hc->wccoef));
-		
-			nd_seterror(ND_ALLOCFAULT);
-			return (-1);	
+			nd_seterror(ND_READFILEERROR);
+			goto wcscanerror;	
 		}
 
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
-		fscanf(file, "%lf", hc->wccoef + wcn);
+		if (fscanf(file, "%lf", hc->wccoef + wcn) == EOF) {
+			nd_seterror(ND_READFILEERROR);
+			goto wccoefscanerror;			
+		}
 
 	return 0;
+
+wcscanerror:
+wccoefscanerror:
+	hc_safefree((void **) &(hc->wccoef));
+
+wccoefmallocerror:
+	hc_safefree((void **) &(hc->wc));
+
+wcmallocerror:	
+	return (-1);
 }
 
 
@@ -242,80 +267,79 @@ static int hc_readstages(FILE *file, struct hc_hcascade *hc)
 {
 	int stn;
 
+	if (hc->stagecount == 0) {
+		hc->stage = NULL;
+
+		return 0;
+	}
+	
 	if ((hc->stage = malloc(sizeof(struct hc_stage) * hc->stagecount))
 		== NULL) {	
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);	
+		goto stagemallocerror;
 	}
 
 	for (stn = 0; stn < hc->stagecount; ++stn)
 		if (fscanf(file, "%d %lf", &(hc->stage[stn].wcc),
 			&(hc->stage[stn].thres)) == EOF) {
-				hc_safefree((void **)&(hc->stage));
 				
 				nd_seterror(ND_READFILEERROR);
-				return (-1);
+				goto scanstageerror;
 		}
 
 	return 0;
+
+scanstageerror:
+	hc_safefree((void **) &(hc->stage));
+
+stagemallocerror:
+	return (-1);	
 }
 
 int hc_hcascaderead(struct hc_hcascade *hc, const char *hcpath)
 {
 	FILE *file;
 
-	if (hc == NULL || hcpath == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(hc != NULL || hcpath != NULL);
 
 	if ((file = fopen(hcpath, "r")) == NULL) {
 		nd_seterror(ND_FOPENERROR);
-		return (-1);
+		goto openfileerror;
 	}
 
-	if (fscanf(file, "%d %d %d %d %d\n", &(hc->ww), &(hc->wh), &(hc->featurec),
-		&(hc->wccount), &(hc->stagecount)) == EOF) {
-			nd_seterror(ND_READFILEERROR);
-			return (-1);
+	if (fscanf(file, "%d %d %d %d %d\n", &(hc->ww), &(hc->wh),
+		&(hc->featurec), &(hc->wccount), &(hc->stagecount)) == EOF) {
+		nd_seterror(ND_READFILEERROR);
+		goto scanheadererror;
 	}
 
-	if (hc->featurec > 0) {
-		if (hc_readfeatures(file, hc) < 0)
-			return (-1);
-	}
-	else
-		hc->feature = NULL;
-
-	if (hc->wccount > 0) {
-		if (hc_readwcs(file, hc) < 0) {
-			hc_safefree((void **)&(hc->feature));
-
-			return (-1);
-		}
-	}
-	else {
-		hc->wc = NULL;
-		hc->wccoef = NULL;
-	}
+	if (hc_readfeatures(file, hc) < 0)
+		goto readfeatureserror;
 	
-	if (hc->stagecount > 0) {
-		if (hc_readstages(file, hc) < 0) {
-			hc_safefree((void **)&(hc->feature));
-			hc_safefree((void **)&(hc->wc));
-	
-			return (-1);
-		}
+	if (hc_readwcs(file, hc) < 0)
+		goto readwcserror;
+		
+	if (hc_readstages(file, hc) < 0) {
+		goto readstageserror;
 	}
-	else
-		hc->stage = NULL;
 
 	if (fclose(file) == EOF) {
-		nd_seterror(ND_FCLOSEERROR);
-		return (-1);
+		goto closeerror;
 	}
 
 	return 0;
+
+closeerror:
+readstageserror:
+	hc_safefree((void **)&(hc->wc));
+
+readwcserror:
+	hc_safefree((void **)&(hc->feature));
+
+readfeatureserror:
+scanheadererror:
+openfileerror:
+	return (-1);
 }
 
 int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
@@ -325,16 +349,8 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 	int wcn;
 	int stn;
 	
-	if (hc == NULL || hcpath == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-	
-	if (!hc_hcisvalid(hc)) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-	
+	assert(hc != NULL || hcpath != NULL || hc_hcisvalid(hc));
+
 	if ((file = fopen(hcpath, "w")) == NULL) {
 		nd_seterror(ND_FOPENERROR);
 		return (-1);
@@ -359,7 +375,8 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 		pixc = hc->feature[fn].w * hc->feature[fn].h;
 
 		for (pixn = 0; pixn < pixc; ++pixn)
-			if (fprintf(file, "%lf%c", hc->feature[fn].data[pixn],
+			if (fprintf(file, "%d%c",
+				(int) hc->feature[fn].data[pixn],
 				(pixn != pixc - 1) ? ' ' : '\n') < 0) {
 				nd_seterror(ND_WRITEFILEERROR);
 				return (-1);
@@ -367,10 +384,10 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 	}
 
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
-		if (fprintf(file, "%d %d %d %d %d %lf %lf\n", hc->wc[wcn].fn,
+		if (fprintf(file, "%d %d %d %d %d %d %lf\n", hc->wc[wcn].fn,
 			hc->wc[wcn].x, hc->wc[wcn].y,
 			hc->wc[wcn].w, hc->wc[wcn].h, 
-			hc->wc[wcn].ineqdir, hc->wc[wcn].thres) < 0) {
+			(int) hc->wc[wcn].ineqdir, hc->wc[wcn].thres) < 0) {
 				nd_seterror(ND_WRITEFILEERROR);
 				return (-1);
 			}
@@ -531,7 +548,10 @@ int hc_imgintegral(struct nd_image *img)
 	int y;
 	int cn;
 
-	c = malloc(sizeof(double) * img->w * img->h);
+	if ((c = malloc(sizeof(double) * img->w * img->h)) == NULL) {
+		nd_seterror(ND_ALLOCFAULT);
+		return (-1);
+	}
 
 	for (cn = 0; cn < img->h * img->w; ++cn)
 		c[cn] = 0.0;
@@ -728,38 +748,30 @@ static int hc_findbestwc(const struct hc_hcascade *hc,
 	struct hc_wclassifier *wc;
 	pthread_t *thrs;
 	struct hc_findwcthreadarg *threadarg;
-	struct hc_findwcthreadret **threadret;	
+	struct hc_findwcthreadret **threadret;
+	int tnn;
 
 	if ((wc = malloc(sizeof(struct hc_wclassifier) * threadwcc * tc))
 		== NULL) {
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto wcmallocerror;
 	}
 	
 	if ((thrs = malloc(sizeof(pthread_t) * tc)) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
-		hc_safefree((void **)&wc);
-
-		return (-1);
+		goto thrsmallocerror;
 	}
 	
 	if ((threadarg = (struct hc_findwcthreadarg *)
 		malloc(sizeof(struct hc_findwcthreadarg) * tc)) == NULL) {	
-		hc_safefree((void **)&wc);
-		hc_safefree((void **)&thrs);
-		
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto threadargmallocerror;
 	}
 
 	if ((threadret = (struct hc_findwcthreadret **)
 		malloc(sizeof(struct hc_findwcthreadret *) * tc)) == NULL) {
-		hc_safefree((void **)&wc);
-		hc_safefree((void **)&thrs);
-		hc_safefree((void **)&threadarg);
-
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto threadretmallocerror;
 	}
 
 	curwc.fn = -1;
@@ -806,7 +818,7 @@ static int hc_findbestwc(const struct hc_hcascade *hc,
 			threadarg[tn].w = weight;
 	
 			pthread_create(thrs + tn, NULL, &findwcthreadfunc,
-				(void *)(threadarg + tn));
+				(void *) (threadarg + tn));
 		}
 	
 		for (tn = 0; tn < tc; ++tn)
@@ -814,18 +826,8 @@ static int hc_findbestwc(const struct hc_hcascade *hc,
 
 		for (tn = 0; tn < tc; ++tn)
 			if (threadret[tn] == NULL) {
-				int tnn;
-				
-				for (tnn = 0; tnn < tc; ++tnn)
-					hc_safefree((void **)
-						(threadret + tnn));
-	
-				hc_safefree((void **)&wc);
-				hc_safefree((void **)&thrs);
-				hc_safefree((void **)&threadarg);
-				hc_safefree((void **)&threadret);			
-		
-				return (-1);
+				nd_seterror(-1);
+				goto threaderror;
 			}
 			else if (threadret[tn]->minwcerr < *minwcerr) {
 				*minwcerr = threadret[tn]->minwcerr;
@@ -833,15 +835,31 @@ static int hc_findbestwc(const struct hc_hcascade *hc,
 			}
 
 		for (tn = 0; tn < tc; ++tn)
-			hc_safefree((void **)(threadret + tn));
+			hc_safefree((void **) (threadret + tn));
 	}
 
-	hc_safefree((void **)&wc);
-	hc_safefree((void **)&thrs);
-	hc_safefree((void **)&threadarg);
-	hc_safefree((void **)&threadret);
+	hc_safefree((void **) &wc);
+	hc_safefree((void **) &thrs);
+	hc_safefree((void **) &threadarg);
+	hc_safefree((void **) &threadret);
 
 	return 0;
+
+threaderror:
+	for (tnn = 0; tnn < tc; ++tnn)
+		hc_safefree((void **) (threadret + tnn));
+
+threadretmallocerror:
+	hc_safefree((void **) &threadarg);
+
+threadargmallocerror:
+	hc_safefree((void **) &thrs);
+
+thrsmallocerror:
+	hc_safefree((void **) &wc);
+
+wcmallocerror:
+	return (-1);
 }
 
 int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
@@ -854,40 +872,26 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	int *iserror;
 	int wcn;
 
-	if (hc == NULL || ts == NULL || weights == NULL || iterc == 0) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-	
-	if (!hc_hcisvalid(hc)) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-	
-	if (!hc_tsisvalid(ts)) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(hc != NULL || ts != NULL || weights != NULL || iterc != 0
+		|| hc_hcisvalid(hc) || hc_tsisvalid(ts));
 
 	for (imgn = 0; imgn < ts->imgc; ++imgn) {
 		if (nd_imgnormalize(ts->img + imgn, 0, 1) < 0)
-			return (-1);
+			goto imgnormalizeerror;
 
 		if (hc_imgintegral(ts->img + imgn) < 0)
-			return (-1);
+			goto imgintegralerror;
 	}
 
 	if ((iserror = malloc(sizeof(int) * ts->imgc)) == NULL) {
-		nd_error = ND_ALLOCFAULT;
-		return (-1);
+		nd_seterror(ND_ALLOCFAULT);
+		goto iserrormallocerror;
 	}
 
 	if (*weights == NULL) {
 		if ((w = malloc(sizeof(double) * ts->imgc)) == NULL) {
-			hc_safefree((void **)&iserror);
-
-			nd_error = ND_ALLOCFAULT;
-			return (-1);
+			nd_seterror(ND_ALLOCFAULT);
+			goto weightsmallocerror;
 		}
 	
 		hc_initweights(w, ts);
@@ -914,9 +918,7 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 		
 		if (hc_findbestwc(hc, ts, w,
 			&minerrwc, &minwcerr, 500, 8) < 0) {
-			hc_safefree((void **)&iserror);
-			
-			return (-1);
+			goto findbestwcerror;
 		}
 
 		for (imgn = 0; imgn < ts->imgc; ++imgn) {
@@ -938,14 +940,8 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 			* hc->wccount)) == NULL
 			|| (newwccoef = realloc(hc->wccoef, sizeof(double)
 			* hc->wccount)) == NULL) {
-			hc_safefree((void **)&iserror);
-			hc_safefree((void **)&(hc->wc));
-			hc_safefree((void **)&(hc->wccoef));
-
-			--hc->wccount;
-		
-			nd_error = ND_ALLOCFAULT;
-			return (-1);
+			nd_seterror(ND_ALLOCFAULT);
+			goto newwcreallocerror;
 		}
 		
 		hc->wc = newwc;
@@ -959,16 +955,15 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	*weights = w;
 
 	if (hc->stage != NULL) {
-		free(hc->stage);
+		hc_safefree((void **) &(hc->stage));
 		hc->stage = NULL;
 	}
 
 	hc->stagecount = 1;
 	
 	if ((hc->stage = malloc(sizeof(struct hc_stage))) == NULL) {
-		hc_safefree((void **)&iserror);
-		hc_safefree((void **)&(hc->wc));
-		hc_safefree((void **)&(hc->wccoef));
+		nd_seterror(ND_ALLOCFAULT);
+		goto stagemallocerror;
 	}
 
 	hc->stage[0].wcc = hc->wccount;
@@ -980,6 +975,21 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	hc->stage[0].thres *= 0.5;
 
 	return 0;
+
+stagemallocerror:
+newwcreallocerror:
+	hc_safefree((void **) &(hc->wc));
+	hc_safefree((void **) &(hc->wccoef));
+		
+findbestwcerror:
+	
+weightsmallocerror:
+	hc_safefree((void **) &iserror);
+
+iserrormallocerror:
+imgintegralerror:
+imgnormalizeerror:
+	return (-1);
 }
 
 static int hc_stageclassify(const struct hc_wclassifier *wc, const double *wccoef,
@@ -1042,11 +1052,12 @@ const double hc_stagefprate(struct hc_wclassifier *wc, double *wccoef,
 				++laststimgc;
 
 			res = ts->isgood[imgn] - res;
-			
+
 			if (res > 0)
 				++fncount;
 			if (res < 0)
 				++(*fpcount);
+	
 		}
 	}
 
@@ -1067,6 +1078,25 @@ static int sorthvsum(const void *hvsum0, const void *hvsum1)
 	return (*((double *)hvsum0) > *((double *)hvsum1)) ? 1 : -1;
 }
 
+static int addstage(struct hc_hcascade *hc, int *stagemaxc, int wcc)
+{
+	if (hc->stagecount >= *stagemaxc) {
+		*stagemaxc *= 2;
+
+		if ((hc->stage = realloc(hc->stage,
+			sizeof(struct hc_stage) * (*stagemaxc))) == NULL) {
+			nd_seterror(ND_ALLOCFAULT);
+			return (-1);
+		}
+	}
+
+	hc->stage[hc->stagecount].wcc = wcc;
+	
+	++(hc->stagecount);
+
+	return 0;
+}
+
 int hc_buildcascade(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	double fprtarget, double fntarget)
 {
@@ -1077,49 +1107,26 @@ int hc_buildcascade(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	double *hvsum;
 	double *goodhvsum;
 	
-	if (hc == NULL || ts == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-	
-	if (!hc_hcisvalid(hc)) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-	
-	if (!hc_tsisvalid(ts)) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (fprtarget < 0.0 || fprtarget > 1.0) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(hc != NULL || ts != NULL || hc_hcisvalid(hc)
+		|| hc_tsisvalid(ts) || fprtarget >= 0.0 || fprtarget <= 1.0);
 	
 	stagemaxc = 1;
-	hc->stagecount = 0;
 
 	if ((hc->stage = (struct hc_stage *) malloc(sizeof(struct hc_stage)
 		* stagemaxc)) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto stagemallocerror;
 	}
 
 	if ((hvsum = (double *) malloc(sizeof(double) * ts->imgc)) == NULL) {
-		hc_safefree((void **)&(hc->stage));
-
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto hvsummallocerror;
 	}
 
 	if ((goodhvsum = (double *) malloc(sizeof(double) * ts->imgc))
 		== NULL) {
-		hc_safefree((void **)&(hc->stage));
-		hc_safefree((void **)&(hvsum));
-
 		nd_seterror(ND_ALLOCFAULT);
-		return (-1);
+		goto goodhvsummallocerror;
 	}
 
 
@@ -1127,30 +1134,22 @@ int hc_buildcascade(struct hc_hcascade *hc, struct hc_trainingset *ts,
 		hvsum[imgn] = 0.0;
 
 	for (imgn = 0; imgn < ts->imgc; ++imgn) {
-		if (nd_imgnormalize(ts->img + imgn, 0, 1) < 0) {
-			hc_safefree((void **)&(hc->stage));
-			hc_safefree((void **)&hvsum);
+		if (nd_imgnormalize(ts->img + imgn, 0, 1) < 0)
+			goto imgnormalizeerror;
 
-			return (-1);
-		}
-
-		if (hc_imgintegral(ts->img + imgn) < 0) {
-			hc_safefree((void **)&(hc->stage));
-			hc_safefree((void **)&hvsum);
-
-			return (-1);
-		}
+		if (hc_imgintegral(ts->img + imgn) < 0)
+			goto imgintegralerror;
 	}
 	
-	hc->stagecount = 0;
-	hc->stage[hc->stagecount].wcc = 1;
+	hc->stagecount = 1;
+	hc->stage[hc->stagecount - 1].wcc = 1;
 	do {	
 		double fprate;
 		int wcc;
 		int goodimgn;
-	
-		wcc = hc->stage[hc->stagecount].wcc;
 		
+		wcc = hc->stage[hc->stagecount - 1].wcc;
+
 		for (imgn = 0; imgn < ts->imgc; ++imgn)
 			if (hc_wclassify(hc->wc + wcc,
 				hc->feature + hc->wc[wcc].fn, ts->img + imgn))
@@ -1163,83 +1162,48 @@ int hc_buildcascade(struct hc_hcascade *hc, struct hc_trainingset *ts,
 
 		qsort(goodhvsum, goodimgn, sizeof(double), sorthvsum);
 
-		hc->stage[hc->stagecount].thres = hc_getstagethres(goodhvsum,
-			goodimgn, fntarget);
+		hc->stage[hc->stagecount - 1].thres
+			= hc_getstagethres(goodhvsum, goodimgn, fntarget);
 
 		fprate = hc_stagefprate(hc->wc, hc->wccoef, hc->stage,
-			hc->stagecount, ts, hc->feature,
+			hc->stagecount - 1, ts, hc->feature,
 			&fpcount);
 
 		if (fprate > fprtarget)
-			++(hc->stage[hc->stagecount].wcc);	
+			++(hc->stage[hc->stagecount - 1].wcc);	
 		else {
-			++hc->stagecount;
-
-			if (hc->stagecount >= stagemaxc) {
-				struct hc_stage *newstage;
-
-				stagemaxc *= 2;
-				
-				if ((newstage = (struct hc_stage *)
-					realloc(hc->stage,
-					sizeof(struct hc_stage)
-					* stagemaxc)) == NULL) {
-					hc_safefree((void **)&(hc->stage));
-					hc_safefree((void **)&hvsum);
-					
-					nd_seterror(ND_ALLOCFAULT);
-					return (-1);
-				}
-			
-				hc->stage = newstage;
-			}
-
-			hc->stage[hc->stagecount].wcc
-				= hc->stage[hc->stagecount - 1].wcc + 1;
+			if (addstage(hc, &stagemaxc,
+				hc->stage[hc->stagecount - 1].wcc + 1) < 0)
+				goto newstagereallocerror;
 		}
 
 		if (fpcount == 0)
 			break;
 
-		if (hc->stage[hc->stagecount].wcc >= hc->wccount) {
-			++hc->stagecount;
-			break;			
-		}
-
+		if (hc->stage[hc->stagecount - 1].wcc >= hc->wccount)
+			break;
 	} while (1);
 
-	if (hc->stage[hc->stagecount - 1].wcc < hc->wccount) {	
-		++hc->stagecount;
-		
-		if (hc->stagecount >= stagemaxc) {
-			struct hc_stage *newstage;
-			
-			stagemaxc *= 2;
+	hc->stage[hc->stagecount - 1].wcc = hc->wccount;
 
-			if ((newstage = (struct hc_stage *) realloc(hc->stage,
-				sizeof(struct hc_stage) * stagemaxc))
-				== NULL) {
-				hc_safefree((void **)&(hc->stage));
-				hc_safefree((void **)&hvsum);
-				
-				nd_seterror(ND_ALLOCFAULT);
-				return (-1);
-			}
-		
-			hc->stage = newstage;
-		}
-
-		hc->stage[hc->stagecount - 1].wcc = hc->wccount;	
-	}
-	
 	hc->stage[hc->stagecount - 1].thres = 0.0;
-
 	for (wcn = 0; wcn < hc->stage[hc->stagecount - 1].wcc; ++wcn)
 		hc->stage[hc->stagecount - 1].thres += hc->wccoef[wcn];
-
 	hc->stage[hc->stagecount - 1].thres *= 0.5;
 
 	return 0;
+
+newstagereallocerror:
+imgintegralerror:
+imgnormalizeerror:
+goodhvsummallocerror:
+	hc_safefree((void **) &(hvsum));
+
+hvsummallocerror:
+	hc_safefree((void **) &(hc->stage));
+
+stagemallocerror:
+	return (-1);
 }
 
 int hc_imgclassify(const struct hc_hcascade *hc, const struct nd_image *img)

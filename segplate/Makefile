@@ -1,9 +1,7 @@
 CC=gcc
 SRC=numseg.c
-HCSRC=../haarcascade/hc_hcascade.c ../haarcascade/hc_rect.c\
-../haarcascade/hc_scanimgpyr.c
-EDSRC=../edgedetect/ed_fft.c ../edgedetect/ed_edgedetect.c \
-../edgedetect/ed_findborder.c
+NNSRC=../neuronet/neuronet.c
+HCSRC=../haarcascade/hc_hcascade.c ../haarcascade/hc_rect.c
 UTILSRC=../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c\
 ../utility/nd_procsync.c
 OPT=-Wall
@@ -15,5 +13,5 @@ HCINC=../haarcascade
 EDINC=../edgedetect
 
 all:
-	$(CC) $(SRC) $(HCSRC) $(EDSRC) $(UTILSRC) \
+	$(CC) $(SRC) $(NNSRC) $(HCSRC) $(UTILSRC) \
 	 -I$(HCINC) -I$(EDINC) -I$(UTILINC) -o $(BIN) $(OPT) $(LIB) 

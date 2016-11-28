@@ -319,7 +319,7 @@ int nd_imggrayscale(struct nd_image *img)
 
 	return 0;
 }
-/*
+
 int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 {
 	int npix;
@@ -369,8 +369,8 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 
 	return 0;
 }
-*/
 
+/*
 int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 {
 	double avr;
@@ -407,6 +407,7 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 	
 	return 0;
 }
+*/
 
 int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 	struct nd_image *imgout)

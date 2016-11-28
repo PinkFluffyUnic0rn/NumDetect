@@ -4,10 +4,49 @@
 #include "nd_image.h"
 #include "nd_error.h"
 #include "hc_hcascade.h"
+#include "neuronet.h"
+
+void imgtoinput(struct nd_image *img, double *input)
+{
+	int pixn;
+	
+	for (pixn = 0; pixn < img->w * img->h; ++pixn) {
+		input[pixn] = 2.0 * img->data[pixn] - 1.0;
+	}
+}
+
+int findpattern(struct nn_neuronet *nnet, double *input)
+{
+	double *out;
+	uint minoutid;
+	int i;
+	uint outputc;
+	
+	outputc = nnet->nodec[nnet->levelc - 1];
+	
+	out = (double *) malloc(sizeof(double) * outputc);	
+	
+	nn_neuroneteval(nnet, input, out);
+
+	minoutid = 0;
+	for (i = 1; i < outputc; ++i)
+		if (out[i] > out[minoutid])
+			minoutid = i;
+
+	// should do something with threshold	
+	if (out[minoutid] > 0.5) {
+		free(out);
+		return minoutid;
+	} else {
+		free(out);
+		return -1;
+	}
+}
 
 int main(int argc, char **argv)
 {
 	struct hc_hcascade hc;
+	struct nn_neuronet *nnet;
 	struct nd_image img;
 	int *xfound;
 	int xfoundcnt;
@@ -21,7 +60,13 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (nd_imgread(argv[2], &img) < 0) {
+	if (nn_neuronetfromfile(&nnet, argv[2]) < 0) {
+		fprintf(stderr, "hc_neuronetfromfile: %s.\n",
+			nd_strerror(nd_error));
+		return 1;
+	}
+
+	if (nd_imgread(argv[3], &img) < 0) {
 		fprintf(stderr, "nd_imgread: %s.\n",
 			nd_strerror(nd_error));
 		return 1;
@@ -97,14 +142,29 @@ int main(int argc, char **argv)
 	for (i = 0; i < xjoinedcnt; ++i) {
 		struct nd_image imginwin;
 		char str[1024];
-		
+		double *nninput;
+		char a[23] = "0123456789abcehkmoptxy";
+		int res;
+	
 		sprintf(str, "%s/%d.png", argv[3], rn++);
 
 		nd_imgcreate(&imginwin, hc.ww, hc.wh, img.format);
 		nd_imgcrop(&img, xjoined[i], 0, hc.ww, hc.wh, &imginwin);
+	
+		nninput = malloc(sizeof(double) * imginwin.w * imginwin.h);
+		
+		imgtoinput(&imginwin, nninput);
+		
+		res = findpattern(nnet, nninput);
+
+		if (res != -1)
+			printf("%c", a[res]);
+		
 		nd_imgwrite(&imginwin, str);
 		nd_imgdestroy(&imginwin);
 	}
+
+	printf("\n");
 
 	return 0;
 }
