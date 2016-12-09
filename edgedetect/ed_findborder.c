@@ -168,6 +168,8 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	int maxlinescount;
 	int linen;
 
+
+	/*
 	if (lineorient == LO_LEFT || lineorient == LO_RIGHT)
 		if (ed_removelowfreq(img, 0.0, 0.0) < 0)
 			return (-1);
@@ -175,9 +177,11 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	if (lineorient == LO_TOP || lineorient == LO_BOTTOM)
 		if (ed_removelowfreq(img, 0.0, 0.0) < 0)
 			return (-1);
+*/
 
 	if (nd_imgnormalize(img, 1, 1) < 0)
 		return (-1);
+
 /*
 	int i, j;
 	for (i = 0; i < img->h; ++i)

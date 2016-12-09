@@ -23,7 +23,7 @@ int nd_imgchanscount(enum ND_PIXELFORMAT format);
 int nd_imgcreate(struct nd_image *img, int w, int h,
 	enum ND_PIXELFORMAT format);
 
-int nd_imgcopy(const struct nd_image *img1, struct nd_image *img2);
+int nd_imgcopy(const struct nd_image *imgsrc, struct nd_image *imgdest);
 
 int nd_imgdestroy(struct nd_image *img);
 

@@ -56,7 +56,7 @@ int findpattern(struct nn_neuronet *nnet, double *input)
 int main(int argc, const char **argv)
 {
 	double *imgdata;
-	struct nn_neuronet *nnet;
+	struct nn_neuronet nnet;
 
 	if (argc < 3) {
 		printf("Not enough arguments.\n");
@@ -72,7 +72,7 @@ int main(int argc, const char **argv)
 	int res;
 	char a[23] = "0123456789abcehkmoptxy";
 	
-	res = findpattern(nnet, imgdata);
+	res = findpattern(&nnet, imgdata);
 
 	if (res != -1)
 		printf("%c", a[res] );

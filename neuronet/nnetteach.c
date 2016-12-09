@@ -39,7 +39,7 @@ void loadimgtoinput(const char *imgpath, double *input)
 	free(img.data);
 }
 
-void loadexlist(const char *elpath, struct nn_neuronet **nnet,
+void loadexlist(const char *elpath, struct nn_neuronet *nnet,
 	struct exampleslist *el)
 {
 	char buf[TEXTBUFSZ];
@@ -174,14 +174,14 @@ void teachneuronet(struct nn_neuronet *nnet, struct exampleslist *el)
 
 int main(int argc, const char **argv)
 {	
-	struct nn_neuronet *nnet;
+	struct nn_neuronet nnet;
 	struct exampleslist el;
 
 	loadexlist(argv[1], &nnet, &el);
 	
-	teachneuronet(nnet, &el);
+	teachneuronet(&nnet, &el);
 
-	nn_neuronettofile(nnet, argv[2]);
+	nn_neuronettofile(&nnet, argv[2]);
 
 	return 0;
 }

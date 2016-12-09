@@ -355,7 +355,7 @@ int normalizenum(struct nd_image *imginwin)
 	double outpoints[8];
 	
 	nd_imgcopy(imginwin, &imghsv);
-		
+	
 	if (nd_imghsvval(&imghsv) < 0) {
 		fprintf(stderr, "nd_imghsvval: %s\n",
 			nd_strerror(nd_error));

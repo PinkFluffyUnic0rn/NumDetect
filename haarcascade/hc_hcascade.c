@@ -52,7 +52,7 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 	int imgn;
 	int imgnn;
 
-	assert(ts != NULL || hcpath != NULL);
+	assert(ts != NULL && hcpath != NULL);
 
 	if ((file = fopen(hcpath, "r")) == NULL) {
 		nd_seterror(ND_FOPENERROR);
@@ -123,8 +123,8 @@ imgmallocerror:
 int hc_create(struct hc_hcascade *hc, int ww, int wh, 
 	const struct nd_image *feature, int featurec)
 {
-	assert(hc != NULL || ww > 0 || wh > 0
-		|| feature != NULL || featurec > 0);
+	assert(hc != NULL && ww > 0 && wh > 0
+		&& feature != NULL && featurec > 0);
 
 	hc->wh = wh;
 	hc->ww = ww;
@@ -300,7 +300,7 @@ int hc_hcascaderead(struct hc_hcascade *hc, const char *hcpath)
 {
 	FILE *file;
 
-	assert(hc != NULL || hcpath != NULL);
+	assert(hc != NULL && hcpath != NULL);
 
 	if ((file = fopen(hcpath, "r")) == NULL) {
 		nd_seterror(ND_FOPENERROR);
@@ -349,7 +349,7 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 	int wcn;
 	int stn;
 	
-	assert(hc != NULL || hcpath != NULL || hc_hcisvalid(hc));
+	assert(hc != NULL && hcpath != NULL && hc_hcisvalid(hc));
 
 	if ((file = fopen(hcpath, "w")) == NULL) {
 		nd_seterror(ND_FOPENERROR);
@@ -872,8 +872,8 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	int *iserror;
 	int wcn;
 
-	assert(hc != NULL || ts != NULL || weights != NULL || iterc != 0
-		|| hc_hcisvalid(hc) || hc_tsisvalid(ts));
+	assert(hc != NULL && ts != NULL && weights != NULL && iterc != 0
+		&& hc_hcisvalid(hc) && hc_tsisvalid(ts));
 
 	for (imgn = 0; imgn < ts->imgc; ++imgn) {
 		if (nd_imgnormalize(ts->img + imgn, 0, 1) < 0)
@@ -1107,8 +1107,8 @@ int hc_buildcascade(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	double *hvsum;
 	double *goodhvsum;
 	
-	assert(hc != NULL || ts != NULL || hc_hcisvalid(hc)
-		|| hc_tsisvalid(ts) || fprtarget >= 0.0 || fprtarget <= 1.0);
+	assert(hc != NULL && ts != NULL && hc_hcisvalid(hc)
+		&& hc_tsisvalid(ts) && fprtarget >= 0.0 && fprtarget <= 1.0);
 	
 	stagemaxc = 1;
 

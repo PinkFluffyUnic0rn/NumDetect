@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <assert.h>
 
 #include <cairo.h>
 
@@ -38,10 +39,7 @@ int nd_imgcreate(struct nd_image *img, int w, int h,
 	img->h = h;
 	img->format = format;
 
-	if (w <= 0 || h <= 0 || format < 0) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(w > 0 && h > 0 && format >= 0);
 	
 	if ((img->data = malloc(sizeof(double) * w * h
 		* nd_imgchanscount(format))) == NULL) {
@@ -52,25 +50,22 @@ int nd_imgcreate(struct nd_image *img, int w, int h,
 	return 0;
 }
 
-int nd_imgcopy(const struct nd_image *img1, struct nd_image *img2)
+int nd_imgcopy(const struct nd_image *imgsrc, struct nd_image *imgdest)
 {
-	img2->w = img1->w;
-	img2->h = img1->h;
-	img2->format = img1->format;
+	imgdest->w = imgsrc->w;
+	imgdest->h = imgsrc->h;
+	imgdest->format = imgsrc->format;
 
-	if (!nd_imgisvalid(img1)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
+	assert(nd_imgisvalid(imgsrc));
 
-	if ((img2->data = malloc(sizeof(double) * img2->w * img2->h
-		* nd_imgchanscount(img2->format))) == NULL) {
+	if ((imgdest->data = malloc(sizeof(double) * imgdest->w * imgdest->h
+		* nd_imgchanscount(imgdest->format))) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
 
-	memcpy(img2->data, img1->data, sizeof(double) * img1->w * img1->h
-		* nd_imgchanscount(img1->format));
+	memcpy(imgdest->data, imgsrc->data, sizeof(double)
+		* imgsrc->w * imgsrc->h * nd_imgchanscount(imgsrc->format));
 
 	return 0;
 }
@@ -91,10 +86,7 @@ int nd_imgread(const char *imgpath, struct nd_image *img)
 	int pixsz;
 	int imgx, imgy, nchan;
 	
-	if (img == NULL || imgpath == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL && imgpath != NULL);
 
 	sur = cairo_image_surface_create_from_png(imgpath);
 	
@@ -155,15 +147,8 @@ int nd_imgwrite(const struct nd_image *img, const char *imgpath)
 	unsigned char *surdata;
 	int imgy, imgx, nchan;
 
-	if (img == NULL || imgpath == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(img)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
+	assert(img != NULL && imgpath != NULL);
+	assert(nd_imgisvalid(img));
 
 	sur = cairo_image_surface_create(CAIRO_FORMAT_RGB24, img->w, img->h);	
 	
@@ -237,16 +222,9 @@ int nd_imghsvval(struct nd_image *img)
 	double *hsvval;
 	int npix;
 	
-	if (img == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL);
+	assert(nd_imgisvalid(img));
 
-	if (!nd_imgisvalid(img)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
-	
 	if ((hsvval = malloc(sizeof(double) * img->w * img->h)) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
@@ -267,7 +245,6 @@ int nd_imghsvval(struct nd_image *img)
 			hsvval[npix] = (chanval > hsvval[npix])
 				? chanval : hsvval[npix];
 		}
-
 	}
 
 	free(img->data);
@@ -283,16 +260,9 @@ int nd_imggrayscale(struct nd_image *img)
 	double *grayscale;
 	int npix;
 	
-	if (img == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL);
+	assert(nd_imgisvalid(img));
 
-	if (!nd_imgisvalid(img)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
-	
 	if ((grayscale = malloc(sizeof(double) * img->w * img->h)) == NULL) {
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
@@ -325,22 +295,28 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 	int npix;
 	double pixsum;
 	int pixcount;
+	double sd;
 
-	if (img == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
+	assert(img != NULL);
+	assert(nd_imgisvalid(img) && img->format == ND_PF_GRAYSCALE);
 
 	pixcount = img->w * img->h;
+	sd = 1.0;
 
 	pixsum = 0.0;
 	for (npix = 0; npix < pixcount; ++npix)
 		pixsum += img->data[npix];
+
+	if (normdev) {
+		double sqpixsum;
+	
+		sqpixsum = 0.0;
+		for (npix = 0; npix < pixcount; ++npix)
+			sqpixsum += img->data[npix] * img->data[npix];
+	
+		sd = sqrt(1.0 / (pixcount - 1.0)
+			* (sqpixsum - pixsum * pixsum / pixcount));
+	}
 
 	if (normavr) {
 		double avr;
@@ -351,21 +327,9 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 			img->data[npix] -= avr;
 	}
 
-	if (normdev) {
-		double sd;
-		double sqpixsum;
-	
-		sqpixsum = 0.0;
-		for (npix = 0; npix < pixcount; ++npix)
-			sqpixsum += img->data[npix] * img->data[npix];
-	
-		sd = sqrt(1.0 / (pixcount - 1.0)
-			* (sqpixsum - pixsum * pixsum / pixcount));
-		
+	if (normdev)
 		for (npix = 0; npix < pixcount; ++npix)
 			img->data[npix] /= sd;
-
-	}
 
 	return 0;
 }
@@ -414,28 +378,17 @@ int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 {
 	int y;
 
-	if (imgin == NULL
-		|| x0 < 0 || x0 >= imgin->w 
-		|| y0 < 0 || y0 >= imgin->h
-		|| w <= 0 || h <= 0
-		|| x0 + w > imgin->w || y0 + h > imgin->h
-		|| imgout == NULL
-		|| imgout->w < w
-		|| imgout->h < h
-		|| imgout->format != imgin->format) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(imgin)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
-	
-	if (!nd_imgisvalid(imgout)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
+	assert(imgin != NULL
+		&& x0 >= 0 && x0 < imgin->w 
+		&& y0 >= 0 && y0 < imgin->h
+		&& w > 0 && h > 0
+		&& x0 + w <= imgin->w && y0 + h <= imgin->h
+		&& imgout != NULL
+		&& imgout->w >= w
+		&& imgout->h >= h
+		&& imgout->format == imgin->format);
+	assert(nd_imgisvalid(imgin));
+	assert(nd_imgisvalid(imgout));
 
 	for (y = 0; y < h; ++y)
 		memcpy(imgout->data
@@ -501,16 +454,8 @@ int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 	int x, y;
 	struct nd_image tmpimg;
 
-	if (inimg == NULL || hrel <= 0.0 || wrel <= 0.0
-		|| outimg == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(inimg) || inimg->format != ND_PF_GRAYSCALE) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
+	assert(inimg != NULL && hrel > 0.0 && wrel > 0.0 && outimg != NULL);
+	assert(nd_imgisvalid(inimg) && inimg->format == ND_PF_GRAYSCALE);
 
 	tmpimg.w = ceil(wrel * inimg->w);	
 	tmpimg.h = ceil(hrel * inimg->h);
@@ -589,16 +534,8 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 	int x, y;
 	struct nd_image tmpimg;
 
-	if (inimg == NULL || hrel <= 0.0 || wrel <= 0.0
-		|| outimg == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(inimg)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
+	assert(inimg != NULL && hrel > 0.0 && wrel > 0.0 && outimg != NULL);
+	assert(nd_imgisvalid(inimg) && inimg->format == ND_PF_GRAYSCALE);
 
 	tmpimg.w = ceil(wrel * inimg->w);	
 	tmpimg.h = ceil(hrel * inimg->h);
@@ -644,10 +581,7 @@ int nd_getpersptransform(double *inpoints, double *outpoints,
 	struct nd_vector3 tmpv;
 	double r[3];
 
-	if (inpoints == NULL || outpoints == NULL || mr == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(inpoints != NULL && outpoints != NULL && mr != NULL);
 
 	a._11 = inpoints[0 * 2 + 0];	a._12 = inpoints[1 * 2 + 0];
 		a._13 = inpoints[2 * 2 + 0];
@@ -698,20 +632,11 @@ int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
 	int x, y;
 	double *newdata;
 
-	if (img == NULL || m == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL && m != NULL);
 
-	if (!nd_imgisvalid(img)) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
-
-	if (img->format != ND_PF_GRAYSCALE && img->format != ND_PF_RGB) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
+	assert(nd_imgisvalid(img)
+		&& (img->format == ND_PF_GRAYSCALE
+		|| img->format == ND_PF_RGB));
 
 	if ((newdata = malloc(sizeof(double) * img->w * img->h
 		* nd_imgchanscount(img->format))) == NULL) {

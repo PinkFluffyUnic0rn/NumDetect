@@ -335,9 +335,10 @@ static int otsu(double *pix, int imgsize, int histsize, double *thres)
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
-
+	
 	for (pixn = 1; pixn < imgsize; ++pixn) {
 		int histel;
+
 
 		histel = (int) ceil(pix[pixn] * rel);
 	
@@ -423,14 +424,14 @@ int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 		nd_seterror(ND_ALLOCFAULT);
 		return (-1);
 	}
-	
+
 	if (sobel(img, gradval, graddir) < 0) {
 		ed_safefree((void **)&gradval);
 		ed_safefree((void **)&graddir);
 	
 		return (-1);
 	}
-
+	
 	for (imgy = 0; imgy < img->h; ++imgy)
 		for (imgx = 0; imgx < img->w; ++imgx)
 			outmask[imgy * img->w + imgx] = 0;
