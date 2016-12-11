@@ -14,6 +14,16 @@ struct nn_neuronet
 	double **vout;
 };
 
+struct nn_trainingset {
+	struct nd_image *img;
+	int *imgclass;
+	int imgc;
+	int classcount;
+	int iterc;
+};
+
+int nn_readtrset(struct nn_trainingset *ts, const char *tspath);
+
 int nn_createneuronet(struct nn_neuronet *nnet, int inputc,
 	int levelc, const int *neuronc);
 

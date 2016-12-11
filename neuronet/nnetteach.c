@@ -49,94 +49,7 @@ int loadimgtoinput(const char *imgpath, double *input)
 	return 0;
 }
 
-int loadexlist(const char *elpath, struct nn_neuronet *nnet,
-	struct exampleslist *el)
-{
-	char buf[TEXTBUFSZ];
-	int imgw, imgh;
-	int levelc;
-	int *neuronc;
-	int leveln, en, cn;
-
-	FILE *elfile;
-	
-	elfile = fopen(elpath, "r");
-
-	fgets(buf, TEXTBUFSZ, elfile);
-	buf[strlen(buf)-1] = buf[strlen(buf)-1] == '\n'
-		? '\0' : buf[strlen(buf)-1];
-
-	imgw = atoi(strtok(buf, " \t"));
-	imgh = atoi(strtok(NULL, " \t"));
-
-	fgets(buf, TEXTBUFSZ, elfile);
-	buf[strlen(buf)-1] = buf[strlen(buf)-1] == '\n'
-		? '\0' : buf[strlen(buf)-1];
-
-	levelc = atoi(strtok(buf, " \t"));
-	
-	neuronc = (int *) malloc(sizeof(int) * levelc);
-	
-	neuronc[0] = atoi(strtok(NULL, " \t"));
-
-	for (leveln = 1; leveln < levelc; ++leveln)
-		neuronc[leveln] = atoi(strtok(NULL, " \t"));
-	
-	if (nn_createneuronet(nnet, imgw * imgh, levelc, neuronc) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	el->imgw = imgw;
-	el->imgh = imgh;
-
-	fgets(buf, TEXTBUFSZ, elfile);
-
-	el->examplec = atoi(strtok(buf, " \t"));
-	el->classc = atoi(strtok(NULL, " \t"));
-	el->iterc = atoi(strtok(NULL, " \t"));
-	
-	el->imgpath = (char **) malloc(sizeof(char *) * el->examplec);
-	el->imgclass = (int *) malloc(sizeof(int) * el->examplec);
-
-	en = 0;	
-	cn = -1;
-	int badn = 0;
-	while (en < el->examplec) {
-		size_t len;
-		ssize_t readc;
-		char *tmps;
-
-		tmps = NULL;
-		len = 0;
-		readc = getline(&tmps, &len, elfile);			
-		
-		tmps[readc - 1] = tmps[readc - 1] == '\n'
-			? '\0' : tmps[readc - 1];
-
-		if (tmps[0] == '-') {
-			if (strcmp("bad", tmps + 1) == 0)
-				badn = 1;
-			else {
-				++cn;
-				badn = 0;
-			}
-		}
-		else {
-			el->imgpath[en] = tmps;
-			el->imgclass[en] = (badn ? -1 : cn);	
-			++en;
-		}
-	}
-	
-	el->classc = cn + 1;
-	
-	fclose(elfile);
-
-	return 0;
-}
-
-static void shufflearr(int *pathidx, int len)
+static void shufflearr(int *idx, int len)
 {
 	int p1;
 
@@ -145,59 +58,55 @@ static void shufflearr(int *pathidx, int len)
 		int tmp;
 	
 		p2 = rand() % len;
-		tmp = pathidx[p1];
+		tmp = idx[p1];
 		
-		pathidx[p1] = pathidx[p2];
-		pathidx[p2] = tmp;	
+		idx[p1] = idx[p2];
+		idx[p2] = tmp;	
 	}
 }
 
-int teachneuronet(struct nn_neuronet *nnet, struct exampleslist *el)
+int teachneuronet(struct nn_neuronet *nnet, struct nn_trainingset *ts)
 {
-	int *pathidx;
-	double *input;
+	int *imgidx;
 	double *target;
-	int i, en;
-	int cn;
-
-	if ((input = (double *) malloc(sizeof(double) * el->imgw * el->imgh))
+	int i;
+	
+	if ((target = (double *) malloc(sizeof(double) * ts->classcount))
 		== NULL)
 		return (-1);
-		
-	if ((target = (double *) malloc(sizeof(double) * el->classc)) == NULL)
+
+	if ((imgidx = malloc(sizeof(int) * ts->imgc)) == NULL)
 		return (-1);
 
-	if ((pathidx = malloc(sizeof(int) * el->examplec)) == NULL)
-		return (-1);
+	for (i = 0; i < ts->imgc; ++i)
+		imgidx[i] = i;
 
-	for (i = 0; i < el->examplec; ++i)
-		pathidx[i] = i;
+	for (i = 0; i < ts->iterc; ++i) {
+		int imgn;
 
-	for (i = 0; i < el->iterc; ++i) {
-		shufflearr(pathidx, el->examplec);
+		shufflearr(imgidx, ts->imgc);
 
-		for (en = 0; en < el->examplec; ++en) {	
+		for (imgn = 0; imgn < ts->imgc; ++imgn) {	
+			int cn;
 			int idx;
-			
-			idx = pathidx[en];
 				
-			if (loadimgtoinput(el->imgpath[idx], input) < 0)
-				return (-1);
-
-			for (cn = 0; cn < el->classc; ++cn)
-				target[cn] = (cn == el->imgclass[idx])
+			idx = imgidx[imgn];
+				
+			for (cn = 0; cn < ts->classcount; ++cn)
+				target[cn] = (cn == ts->imgclass[idx])
 					? 1.0 : 0.0;
 
-			if (nn_teachneuronet(nnet, input, target, 1.0) < 0) {
+			if (nn_teachneuronet(nnet, ts->img[idx].data,
+				target, 1.0) < 0) {
 				fprintf(stderr, nd_geterrormessage());
 				return (-1);
 			}
 		}
 
-		printf("%1.3f%% done.\n", 100.0 * (i + 1) / el->iterc);
+		printf("%1.3f%% done.\n", 100.0 * (i + 1) / ts->iterc);
 	}
 
-	free(pathidx);
+	free(imgidx);
 
 	return 0;
 }
@@ -205,14 +114,27 @@ int teachneuronet(struct nn_neuronet *nnet, struct exampleslist *el)
 int main(int argc, const char **argv)
 {	
 	struct nn_neuronet nnet;
-	struct exampleslist el;
-
-	loadexlist(argv[1], &nnet, &el);
+	struct nn_trainingset ts;
 	
-	if (teachneuronet(&nnet, &el) < 0)
+	if (argc < 4) {
+		fprintf(stderr, "%s", "Too few agruments.");
+		return 1;
+	}
+
+	if (nn_readtrset(&ts, argv[1]) < 0) {
+		fprintf(stderr, nd_geterrormessage());
+		return 1;
+	}
+	
+	if (nn_neuronetfromfile(&nnet, argv[2]) < 0) {
+		fprintf(stderr, nd_geterrormessage());
+		return 1;
+	}
+
+	if (teachneuronet(&nnet, &ts) < 0)
 		return 1;
 
-	if (nn_neuronettofile(&nnet, argv[2])) {
+	if (nn_neuronettofile(&nnet, argv[3])) {
 		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}

@@ -331,45 +331,6 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 	return 0;
 }
 
-/*
-int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
-{
-	double avr;
-	double sd;
-	int npix;
-
-	if (img == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
-		nd_seterror(ND_INVALIDIMAGE);
-		return (-1);
-	}
-
-	avr = 0.0;
-	for (npix = 0; npix < img->w * img->h; ++npix)
-		avr += img->data[npix];
-	avr /= (double) (img->w * img->h);
-
-	sd = 0.0;	
-	for (npix = 0; npix < img->w * img->h; ++npix)
-		sd += pow(img->data[npix] - avr, 2.0);
-	sd = sqrt(sd / (double) (img->w * img->h));
-
-	if (normavr)
-		for (npix = 0; npix < img->w * img->h; ++npix)
-			img->data[npix] -= avr;
-	
-	if (normdev)
-		for (npix = 0; npix < img->w * img->h; ++npix)
-			img->data[npix] /= sd;
-	
-	return 0;
-}
-*/
-
 int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 	struct nd_image *imgout)
 {
@@ -398,19 +359,24 @@ int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 	return 0;
 }
 
-static double nd_cubicinterpx(const struct nd_image *inimg, double x, int y)
+static double nd_cubicinterpx(const struct nd_image *inimg,
+	double x, int y, int cn)
 {
 	double a, b, c, d;
 	double p0, p1, p2, p3;
 	double xr;
 
-	p1 = inimg->data[y * inimg->w + (int)floor(x)];
+	p1 = inimg->data[(y * inimg->w + (int)floor(x))
+		* nd_imgchanscount(inimg->format) + cn];
 	p0 = (((int)(floor(x) - 1)) >= 0)
-		? inimg->data[y * inimg->w + (int)(floor(x) - 1)] : p1;
+		? inimg->data[(y * inimg->w + (int)(floor(x) - 1))
+		* nd_imgchanscount(inimg->format) + cn] : p1;
 	p2 = (((int)ceil(x)) < (inimg->w))
-		? inimg->data[y * inimg->w + (int)ceil(x)] : p1;
+		? inimg->data[(y * inimg->w + (int)ceil(x))
+		* nd_imgchanscount(inimg->format) + cn] : p1;
 	p3 = ((int)(ceil(x) + 1) < (inimg->w))
-		? inimg->data[y * inimg->w + (int)(ceil(x) + 1)] : p2;
+		? inimg->data[(y * inimg->w + (int)(ceil(x) + 1))
+		* nd_imgchanscount(inimg->format) + cn] : p2;
 
 	a = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
 	b = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
@@ -422,19 +388,20 @@ static double nd_cubicinterpx(const struct nd_image *inimg, double x, int y)
 	return a * xr * xr * xr + b * xr * xr + c * xr + d;
 }
 
-static double nd_cubicinterp(const struct nd_image *inimg, double x, double y)
+static double nd_cubicinterp(const struct nd_image *inimg,
+	double x, double y, int cn)
 {
 	double a, b, c, d;
 	double p0, p1, p2, p3;
 	double yr;
 	
-	p1 = nd_cubicinterpx(inimg, x, (int)floor(y));
+	p1 = nd_cubicinterpx(inimg, x, (int)floor(y), cn);
 	p0 = (((int)(floor(y) - 1)) >= 0)
-		? nd_cubicinterpx(inimg, x, (int)(floor(y) - 1)) : p1;
+		? nd_cubicinterpx(inimg, x, (int)(floor(y) - 1), cn) : p1;
 	p2 = ((int)ceil(y)) < (inimg->h)
-		? nd_cubicinterpx(inimg, x, (int)ceil(y)) : p1;
+		? nd_cubicinterpx(inimg, x, (int)ceil(y), cn) : p1;
 	p3 = ((int)(ceil(y) + 1) < (inimg->h))
-		? nd_cubicinterpx(inimg, x, (int)(ceil(y) + 1)) : p2;
+		? nd_cubicinterpx(inimg, x, (int)(ceil(y) + 1), cn) : p2;
 
 	a = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
 	b = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
@@ -452,14 +419,14 @@ int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image tmpimg;
 
 	assert(inimg != NULL && hrel > 0.0 && wrel > 0.0 && outimg != NULL);
-	assert(nd_imgisvalid(inimg) && inimg->format == ND_PF_GRAYSCALE);
+	assert(nd_imgisvalid(inimg));
 
 	tmpimg.w = ceil(wrel * inimg->w);	
 	tmpimg.h = ceil(hrel * inimg->h);
 	tmpimg.format = inimg->format;
 
-	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h))
-		== NULL) {
+	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h
+		* nd_imgchanscount(tmpimg.format))) == NULL) {
 		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
@@ -467,12 +434,17 @@ int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 	for (y = 0; y < tmpimg.h; ++y)
 		for (x = 0; x < tmpimg.w; ++x) {
 			double iny, inx;
+			int c;
 
 			iny = ((double) y) / hrel;
 			inx = ((double) x) / wrel;
 			
-			tmpimg.data[y * tmpimg.w + x]
-				= nd_cubicinterp(inimg, inx, iny);
+			
+			for (c = 0; c < nd_imgchanscount(inimg->format); ++c) {
+				tmpimg.data[(y * tmpimg.w + x)
+					* nd_imgchanscount(tmpimg.format) + c]
+					= nd_cubicinterp(inimg, inx, iny, c);
+			}
 		}
 
 	if (inimg == outimg)
@@ -665,16 +637,7 @@ int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
 					: 0.0;
 
 			}
-		/*
-			newdata[y * img->w + x] = (iny >= 0 && iny < img->h
-				&& inx >= 0 && inx < img->w)
-				? nd_linearinterp(img, inx, iny)
-				: 0.0;
-		*/
 		}
-
-//	free(img->data);
-//	img->data = newdata;
 
 	memcpy(img->data, newdata, sizeof(double) * img->w * img->h
 		* nd_imgchanscount(img->format));

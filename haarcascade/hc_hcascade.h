@@ -43,7 +43,7 @@ struct hc_trainingset {
 	int imgc;
 };
 
-int hc_readtrset(struct hc_trainingset *ts, const char *hcpath);
+int hc_readtrset(struct hc_trainingset *ts, const char *tspath);
 
 int hc_create(struct hc_hcascade *hc, int wh, int ww,
 	const struct nd_image *feature, int featurec);

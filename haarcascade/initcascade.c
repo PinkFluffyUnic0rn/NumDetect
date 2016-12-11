@@ -31,7 +31,8 @@ int loadfeatures(const char *dirpath, struct nd_image **f, int *fcount)
 	maxfcount = 1;
 	*fcount = 0;
 
-	*f = malloc(sizeof(struct nd_image) * maxfcount);
+	if ((*f = malloc(sizeof(struct nd_image) * maxfcount)) == NULL)
+		return (-1);
 
 	if ((d = opendir(dirpath)) == NULL) {
 		closedir(d);
@@ -44,8 +45,10 @@ int loadfeatures(const char *dirpath, struct nd_image **f, int *fcount)
 		sprintf(fullpath, "%s/%s", dirpath, de->d_name);
 		
 		if (nd_imgread(fullpath, &img) >= 0) {
-			if (nd_imggrayscale(&img))
+			if (nd_imggrayscale(&img) < 0) {
+				fprintf(stderr, nd_geterrormessage());
 				return (-1);
+			}
 
 			imgtohfeature(&img);
 
@@ -82,27 +85,29 @@ int main(int argc, const char **argv)
 	int w, h;
 	char *next;
 
-
 	if (argc < 5) {
-		fprintf(stderr, "%s\n", "Too few arguments.");
+		fprintf(stderr, "Too few arguments.\n");
 		return 1;
 	}
 
 	w = strtol(argv[1], &next, 0);
 
 	if (argv[1] == next) {
-		fprintf(stderr, "%s", "Wrong format of width.");
+		fprintf(stderr, "Wrong format of width.\n");
 		return 1;
 	}
 
 	h = strtol(argv[2], &next, 0);
 
 	if (argv[2] == next) {
-		fprintf(stderr, "%s", "Wrong format of height.");
+		fprintf(stderr, "Wrong format of height.\n");
 		return 1;
 	}
 	
-	loadfeatures(argv[3], &f, &fcount);
+	if (loadfeatures(argv[3], &f, &fcount) < 0) {
+		fprintf(stderr, "Cannot load features.\n");
+		return 1;
+	}
 
 	if (hc_create(&hc, w, h, f, fcount) < 0) {
 		fprintf(stderr, nd_geterrormessage());

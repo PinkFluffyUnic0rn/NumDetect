@@ -5,7 +5,96 @@
 #include <assert.h>
 
 #include "nn_neuronet.h"
+#include "nd_image.h"
 #include "nd_error.h"
+
+static int nn_imgtonnetexample(struct nd_image *img)
+{
+	int pixn;
+	
+	if (nd_imggrayscale(img) < 0)
+		return (-1);
+
+	for (pixn = 0; pixn < img->w * img->h; ++pixn)
+		img->data[pixn] = 2.0 * img->data[pixn] - 1.0;
+
+	return 0;
+}
+
+int nn_readtrset(struct nn_trainingset *ts, const char *tspath)
+{
+	FILE *tsfile;
+	char *str;
+	size_t strsz;
+	int curimg;
+	int curclass;
+	int bad;
+
+	if ((tsfile = fopen(tspath, "r")) == NULL) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		goto fopenerror;
+	}
+
+	if (fscanf(tsfile, "%d %d %d\n", &(ts->imgc), &(ts->classcount),
+		&(ts->iterc)) == EOF) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		goto fscanferror;
+	}
+
+	if ((ts->img = malloc(sizeof(struct nd_image) * ts->imgc)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		goto imgmallocerror;
+	}
+
+	if ((ts->imgclass = malloc(sizeof(int) * ts->imgc)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		goto imgclassmallocerror;
+	}
+	
+	curimg = 0;
+	curclass = -1;
+	strsz = 0;
+	while (getline(&str, &strsz, tsfile) >= 0) {
+		str[strlen(str) - 1] = '\0';
+
+		if (str[0] == '-') {
+			if (strcmp("bad", str + 1) == 0)
+				bad = 1;
+			else {
+				++curclass;
+				bad = 0;
+			}
+
+			continue;
+		}
+		
+		ts->imgclass[curimg] = bad ? -1 : curclass;
+
+		if (nd_imgread(str, ts->img + curimg) < 0)
+			goto imgreaderror;
+		
+		if (nn_imgtonnetexample(ts->img + curimg) < 0)
+			goto imgtonnetexampleerror;	
+		
+		++curimg;
+	}
+	
+	return 0;
+
+imgtonnetexampleerror:
+imgreaderror:
+	for (; curimg >= 0; --curimg)
+		nd_imgdestroy(ts->img + curimg);
+	
+	free(ts->imgclass);
+imgclassmallocerror:
+	free(ts->img);
+imgmallocerror:
+fscanferror:
+fopenerror:
+	return (-1);
+
+}
 
 int nn_createneuronet(struct nn_neuronet *nnet, int inputc,
 	int levelc, const int *neuronc)
@@ -212,7 +301,11 @@ int nn_neuronettofile(const struct nn_neuronet *nnet, const char *fname)
 	
 	assert(nnet != NULL && fname != NULL);
 
-	nnfile = fopen(fname, "w");
+	if ((nnfile = fopen(fname, "w")) == NULL) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		return (-1);
+	}
+
 
 	if (fprintf(nnfile, "%u ",nnet->levelc) < 0) {
 		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
@@ -258,7 +351,10 @@ int nn_neuronetfromfile(struct nn_neuronet *nnet, const char *fname)
 
 	assert(nnet != NULL && fname != NULL);
 
-	nnfile = fopen(fname, "rb");
+	if ((nnfile = fopen(fname, "rb")) == NULL) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		goto fopenerror;
+	}
 
 	if (fscanf(nnfile, "%u", &levelc) == EOF) {
 		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
@@ -304,5 +400,6 @@ scanfnodecerror:
 nodecmallocerror:
 scanfinputcerror:
 scanflevelcerror:
+fopenerror:
 	return (-1);
 }

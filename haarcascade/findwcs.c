@@ -51,7 +51,8 @@ int loadweights(double **weight, int *wcount)
 		cur = next;
 	}
 	
-	fclose(weightfile);
+	if (fclose(weightfile) == EOF)
+		return (-1);
 
 	return 0;
 }
@@ -62,15 +63,18 @@ int saveweights(double *weight, int wcount)
 	int wn;
 
 	if ((weightfile = fopen("weight", "w")) == NULL)
-		return 1;
+		return (-1);
 
-	fprintf(weightfile, "%d\n", wcount);
+	if (fprintf(weightfile, "%d\n", wcount) < 0)
+		return (-1);
 
 	for (wn = 0; wn < wcount; ++wn)
-		fprintf(weightfile, "%lf%c", weight[wn],
-			wn != (wcount - 1) ? ' ' : '\n');
+		if (fprintf(weightfile, "%lf%c", weight[wn],
+			wn != (wcount - 1) ? ' ' : '\n') < 0)
+			return (-1);
 	
-	fclose(weightfile);
+	if (fclose(weightfile) == EOF)
+		return (-1);
 
 	return 0;
 }
@@ -117,7 +121,10 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
-	saveweights(weight, ts.imgc);
+	if (saveweights(weight, ts.imgc) < 0) {
+		fprintf(stderr, "%s", "Error while saving weights.\n");
+		return 1;	
+	}
 
 	if (hc_hcascadewrite(&hc, argv[3]) < 0) {
 		fprintf(stderr, nd_geterrormessage());

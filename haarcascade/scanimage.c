@@ -19,16 +19,22 @@ int imgcroptofile(struct nd_image *img, struct hc_rect *r, const char *path)
 	struct nd_image imginwin;
 
 	if (nd_imgcreate(&imginwin, abs(r->x1 - r->x0),
-		abs(r->y1 - r->y0), img->format) < 0)
+		abs(r->y1 - r->y0), img->format) < 0) {
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
+	}
 	
 	if (nd_imgcrop(img, r->x0, r->y0,
 		abs(r->x1 - r->x0),
-		abs(r->y1 - r->y0), &imginwin))
+		abs(r->y1 - r->y0), &imginwin) < 0) {
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
+	}
 		
-	if (nd_imgwrite(&imginwin, path))
+	if (nd_imgwrite(&imginwin, path) < 0) {
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
+	}
 
 	return 0;
 }
@@ -84,7 +90,6 @@ int main(int argc, char **argv)
 
 		if (newr[rn].y0 >= 0 && newr[rn].y1 < img.h)
 			if (imgcroptofile(&img, newr + rn, a) < 0) {
-				fprintf(stderr, nd_geterrormessage());
 				return 1;
 			}
 	}
