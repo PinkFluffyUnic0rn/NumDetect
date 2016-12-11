@@ -18,14 +18,12 @@ int main(int argc, char **argv)
 	}
 	
 	if (nd_imgread(argv[1], &img) < 0) {
-		fprintf(stderr, "nd_imgread: %s\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (nd_imghsvval(&img) < 0) {
-		fprintf(stderr, "nd_imghsvval: %s\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 /*
@@ -43,14 +41,12 @@ int main(int argc, char **argv)
 	outpoints[6] = 0.0; outpoints[7] = img.h;
 
 	if (nd_getpersptransform(inpoints, outpoints, &m) < 0) {
-		fprintf(stderr, "nd_getpersptransform: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (nd_imgapplytransform(&img, &m) < 0) {
-		fprintf(stderr, "nd_imgapplytransform: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 

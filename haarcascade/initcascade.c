@@ -37,7 +37,6 @@ int loadfeatures(const char *dirpath, struct nd_image **f, int *fcount)
 		closedir(d);
 		return (-1);
 	}
-	
 	while ((de = readdir(d)) != NULL) {
 		char fullpath[255];
 		struct nd_image img;
@@ -85,33 +84,33 @@ int main(int argc, const char **argv)
 
 
 	if (argc < 5) {
-		printf("%s\n", "Too few arguments.");
+		fprintf(stderr, "%s\n", "Too few arguments.");
 		return 1;
 	}
 
 	w = strtol(argv[1], &next, 0);
 
 	if (argv[1] == next) {
-		printf("%s", "Wrong format of width.");
+		fprintf(stderr, "%s", "Wrong format of width.");
 		return 1;
 	}
 
 	h = strtol(argv[2], &next, 0);
 
 	if (argv[2] == next) {
-		printf("%s", "Wrong format of height.");
+		fprintf(stderr, "%s", "Wrong format of height.");
 		return 1;
 	}
-
+	
 	loadfeatures(argv[3], &f, &fcount);
 
 	if (hc_create(&hc, w, h, f, fcount) < 0) {
-		printf("%s\n", "Cannot create cascade.");
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (hc_hcascadewrite(&hc, argv[4]) < 0) {
-		printf("%s\n", "Cannot write cascade to file.");
+		fprintf(stderr, nd_geterrormessage());
 		return 1;	
 	}
 

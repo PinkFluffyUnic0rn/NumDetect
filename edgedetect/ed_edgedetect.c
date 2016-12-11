@@ -1,4 +1,5 @@
 #include <math.h>
+#include <assert.h>
 
 #include "ed_edgedetect.h"
 #include "nd_error.h"
@@ -86,22 +87,15 @@ int ed_gaussblur(struct nd_image *img, double sigma)
 	double *ws, *tmpx, *tmpy;
 	double *data;
 	
-	if (img == NULL || sigma <= 0.0) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL && sigma > 0.0);
+	assert(nd_imgisvalid(img) && img->format == ND_PF_GRAYSCALE);
 
 	w = img->w;
 	h = img->h;
 	sigma3 = (int)(3.0 * sigma);
 	
 	if ((ws = malloc(sizeof(double) * (2 * sigma3 + 1))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -110,7 +104,7 @@ int ed_gaussblur(struct nd_image *img, double sigma)
 	if ((tmpx = (double *)calloc(w * h, sizeof(double))) == NULL) {
 		ed_safefree((void **)&tmpx);
 
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -118,7 +112,7 @@ int ed_gaussblur(struct nd_image *img, double sigma)
 		ed_safefree((void **)&tmpx);
 		ed_safefree((void **)&tmpy);
 		
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -276,14 +270,14 @@ static int sobel(struct nd_image *img, double *gradval, double *graddir)
 	int imgx, imgy;
 
 	if ((gy = malloc(sizeof(double) * img->w * img->h)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
 	if ((gx = malloc(sizeof(double) * img->w * img->h)) == NULL) {
 		ed_safefree((void **)&gx);
 	
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -332,7 +326,7 @@ static int otsu(double *pix, int imgsize, int histsize, double *thres)
 	rel = (double) histsize / maxval;
 
 	if ((hist = calloc(histsize, sizeof(int))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 	
@@ -403,25 +397,18 @@ int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 	double *gradval, *graddir;
 	int imgx, imgy;
 
-	if (img == NULL || outmask == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
-
-	if (!nd_imgisvalid(img) || img->format != ND_PF_GRAYSCALE) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL && outmask != NULL);
+	assert(nd_imgisvalid(img) && img->format == ND_PF_GRAYSCALE);
 
 	if ((gradval = malloc(sizeof(double) * img->w * img->h)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 		
 	if ((graddir = malloc(sizeof(double) * img->w * img->h)) == NULL) {
 		ed_safefree((void **)&gradval);
 		
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -562,17 +549,14 @@ int ed_hough(int *img, int imgw, int imgh, double dang,
 	int linec;
 	int linen;
 
-	if (img == NULL || imgw == 0 || imgh == 0
-		|| dang <= 0.0 || lines == NULL || linemaxc <= 0) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL && imgw > 0 && imgh > 0
+		&& dang > 0.0 && lines != NULL && linemaxc > 0);
 
 	arange = M_PI / dang;
 	drange = (imgw + imgh) * 2 + 1;
 
 	if ((acc = calloc(arange * drange, sizeof(int))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -600,7 +584,7 @@ int ed_hough(int *img, int imgw, int imgh, double dang,
 	if ((hl = malloc(sizeof(struct houghline) * linec)) == NULL) {
 		ed_safefree((void **)&acc);
 	
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -658,15 +642,12 @@ int ed_houghseg(int *img, int imgw, int imgh, double *lines, int linec,
 
 	struct point *linep;
 
-	if (img == NULL || imgw <= 0 || imgh <= 0
-		|| lines == NULL || linec <= 0 || seg == NULL
-		|| maxsegc <= 0 || maxgap <= 0.0) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(img != NULL || imgw > 0 || imgh > 0
+		|| lines != NULL || linec > 0 || seg != NULL
+		|| maxsegc > 0 || maxgap > 0.0); 
 
 	if ((linep = malloc(sizeof(struct point) * imgw * imgh)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 

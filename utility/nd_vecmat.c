@@ -1,15 +1,13 @@
 #include <math.h>
 #include <string.h>
+#include <assert.h>
 
 #include "nd_vecmat.h"
 #include "nd_error.h"
 
 int nd_m3scale(struct nd_matrix3 *r, double x, double y, double z)
 {
-	if (r == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(r != NULL);
 
 	r->_11 = x;	r->_12 = 0.0;	r->_13 = 0.0;
 	r->_21 = 0.0;	r->_22 = y;	r->_23 = 0.0;
@@ -20,10 +18,7 @@ int nd_m3scale(struct nd_matrix3 *r, double x, double y, double z)
 
 int nd_m3rotatex(struct nd_matrix3 *r, double ang)
 {
-	if (r == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(r != NULL);
 
 	r->_11 = 1.0;	r->_12 = 0.0;		r->_13 = 0.0;
 	r->_21 = 0.0;	r->_22 = cos(ang);	r->_23 = sin(ang);
@@ -34,10 +29,7 @@ int nd_m3rotatex(struct nd_matrix3 *r, double ang)
 
 int nd_m3rotatey(struct nd_matrix3 *r, double ang)
 {
-	if (r == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(r != NULL);
 
 	r->_11 = cos(ang);	r->_12 = 0.0;		r->_13 = sin(ang);
 	r->_21 = 0.0;		r->_22 = 1.0;		r->_23 = 0.0;
@@ -48,10 +40,7 @@ int nd_m3rotatey(struct nd_matrix3 *r, double ang)
 
 int nd_m3rotatez(struct nd_matrix3 *r, double ang)
 {
-	if (r == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(r != NULL);
 
 	r->_11 = cos(ang);	r->_12 = sin(ang);	r->_13 = 0.0;
 	r->_21 = -sin(ang);	r->_22 = cos(ang);	r->_23 = 0.0;
@@ -62,10 +51,7 @@ int nd_m3rotatez(struct nd_matrix3 *r, double ang)
 
 int nd_m3translate(struct nd_matrix3 *r, double x, double y, double z)
 {
-	if (r == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(r != NULL);
 
 	r->_11 = 1.0;	r->_12 = 0.0;	r->_13 = 0.0;
 	r->_21 = 0.0;	r->_22 = 1.0;	r->_23 = 0.0;
@@ -78,11 +64,8 @@ int nd_v3m3mult(const struct nd_vector3 *v, const struct nd_matrix3 *m,
 	struct nd_vector3 *r)
 {
 	struct nd_vector3 tmp;
-
-	if (v == NULL || m == NULL || r == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	
+	assert(v != NULL && m != NULL && r != NULL);
 
 	tmp.x = (v->x * m->_11) + (v->y * m->_12) + (v->z * m->_13);
 	tmp.y = (v->x * m->_21) + (v->y * m->_22) + (v->z * m->_23);
@@ -98,10 +81,7 @@ int nd_m3mult(const struct nd_matrix3 *m0, const struct nd_matrix3 *m1,
 {
 	struct nd_matrix3 tmp;
 
-	if (m0 == NULL || m1 == NULL || r == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(m0 != NULL && m1 != NULL && r != NULL);
 
 	tmp._11 = (m1->_11 * m0->_11)
 		+ (m1->_21 * m0->_12) + (m1->_31 * m0->_13);
@@ -245,10 +225,7 @@ int nd_m3nonhomsolve(const struct nd_matrix3 *m, const struct nd_vector3 *v,
 	memcpy(tmpM, m, sizeof(struct nd_matrix3));
 	memcpy(tmpV, v, sizeof(struct nd_vector3));
 
-	if (nd_chooseroworder3v(tmpM, tmpV) < 0) {
-		nd_seterror(ND_INVALIDMATRIX);
-		return (-1);
-	}
+	assert(nd_chooseroworder3v(tmpM, tmpV) >= 0);
 
 	for (k = 0; k < 3; ++k) {
 		coef = 1/tmpM[k][k];
@@ -386,10 +363,7 @@ int nd_m3inverse(const struct nd_matrix3 *m, struct nd_matrix3 *r)
 		for (j = 0; j < 3; ++j)
 			invM[i][j] = (i == j) ? 1.0f : 0.0;
 
-	if (nd_chooseroworder3m(tmpM, invM) < 0) {
-		nd_seterror(ND_INVALIDMATRIX);
-		return (-1);
-	}
+	assert(nd_chooseroworder3m(tmpM, invM) >= 0);
 
 	for (k = 0; k < 3; ++k) {
 		coef = 1/tmpM[k][k];

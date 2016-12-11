@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include "hc_rect.h"
 #include "nd_error.h"
 
@@ -28,14 +30,14 @@ static int hc_recttograph(const struct hc_rect *r, int recc,
 	int ec;
 
 	if ((*ve = malloc(sizeof(int *) * recc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
 	if ((*vec = malloc(sizeof(int) * recc)) == NULL) {
 		hc_safefree((void **) ve);
 
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 	
@@ -49,7 +51,7 @@ static int hc_recttograph(const struct hc_rect *r, int recc,
 		hc_safefree((void **)ve);
 		hc_safefree((void **)vec);
 		
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -98,14 +100,14 @@ static int hc_splitgraph(int **ve, int *vec, int vc,
 	maxc = 1;
 
 	if ((*v = (int *) malloc(sizeof(int) * vc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
 	if ((*cvc = (int *) malloc(sizeof(int) * maxc)) == NULL) {
 		free(*v);
 
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -113,7 +115,7 @@ static int hc_splitgraph(int **ve, int *vec, int vc,
 		hc_safefree((void **)v);
 		hc_safefree((void **)cvc);
 		
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 	
@@ -122,7 +124,7 @@ static int hc_splitgraph(int **ve, int *vec, int vc,
 		hc_safefree((void **)cvc);
 		hc_safefree((void **)&isreached);
 
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 	
@@ -160,7 +162,8 @@ static int hc_splitgraph(int **ve, int *vec, int vc,
 					hc_safefree((void **)cvc);
 					hc_safefree((void **)&isreached);
 
-					nd_seterror(ND_ALLOCFAULT);
+					nd_seterrormessage(ND_MSGALLOCERROR,
+						__func__);
 					return (-1);
 				}
 
@@ -198,10 +201,7 @@ int hc_conrect(const struct hc_rect *r, int recc,
 
 	int res;
 
-	if (r == NULL || r <= 0 || newr == NULL || newrc == NULL) {
-		nd_seterror(ND_INVALIDARG);
-		return (-1);
-	}
+	assert(r != NULL && recc > 0 && newr != NULL && newrc != NULL);
 
 	if ((res = hc_recttograph(r, recc, &ve, &vec)) < 0) {
 		return (-1);
@@ -213,7 +213,7 @@ int hc_conrect(const struct hc_rect *r, int recc,
 
 	if ((*newr = (struct hc_rect *) malloc(sizeof(struct hc_rect) * cc))
 		== NULL) {
-		nd_error = ND_ALLOCFAULT;
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 

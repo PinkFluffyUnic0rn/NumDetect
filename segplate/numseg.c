@@ -4,7 +4,7 @@
 #include "nd_image.h"
 #include "nd_error.h"
 #include "hc_hcascade.h"
-#include "neuronet.h"
+#include "nn_neuronet.h"
 
 void imgtoinput(struct nd_image *img, double *input)
 {
@@ -46,7 +46,7 @@ int findpattern(struct nn_neuronet *nnet, double *input)
 int main(int argc, char **argv)
 {
 	struct hc_hcascade hc;
-	struct nn_neuronet *nnet;
+	struct nn_neuronet nnet;
 	struct nd_image img;
 	int *xfound;
 	int xfoundcnt;
@@ -55,33 +55,28 @@ int main(int argc, char **argv)
 	int x, i;
 
 	if (hc_hcascaderead(&hc, argv[1]) < 0) {
-		fprintf(stderr, "hc_hcascaderead: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (nn_neuronetfromfile(&nnet, argv[2]) < 0) {
-		fprintf(stderr, "hc_neuronetfromfile: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (nd_imgread(argv[3], &img) < 0) {
-		fprintf(stderr, "nd_imgread: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (nd_imgscalebilinear(&img, (double) hc.wh / img.h,
 		(double) hc.wh / img.h, &img) < 0) {
-		fprintf(stderr, "nd_imgscalebilinear: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 	
 	if (nd_imggrayscale(&img)) {
-		fprintf(stderr, "nd_imggrayscale: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 	
@@ -155,7 +150,7 @@ int main(int argc, char **argv)
 		
 		imgtoinput(&imginwin, nninput);
 		
-		res = findpattern(nnet, nninput);
+		res = findpattern(&nnet, nninput);
 
 		if (res != -1)
 			printf("%c", a[res]);

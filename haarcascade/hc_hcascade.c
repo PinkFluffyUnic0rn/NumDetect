@@ -55,19 +55,19 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 	assert(ts != NULL && hcpath != NULL);
 
 	if ((file = fopen(hcpath, "r")) == NULL) {
-		nd_seterror(ND_FOPENERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		goto fopenerror;
 	}
 
 	if (fscanf(file, "%d %d\n", &goodc, &badc) < 0) {
-		nd_seterror(ND_FOPENERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		goto scantexcounterror;
 	}
 	
 	ts->imgc = goodc + badc;
 	
 	if ((ts->img = malloc(sizeof(struct nd_image) * ts->imgc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto imgmallocerror;
 	}
 	
@@ -78,6 +78,8 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 		strsz = 0;
 		if (getline(&imgpath, &strsz, file) <= 0) {
 			hc_safefree((void **) &imgpath);
+		
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			goto getlineerror;
 		}
 	
@@ -85,19 +87,25 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 
 		if (nd_imgread(imgpath, ts->img + imgn) < 0) {
 			hc_safefree((void **) &imgpath);
+			
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			goto imgreaderror;
 		}
 
 		if (nd_imggrayscale(ts->img + imgn) < 0) {
 			hc_safefree((void **) &imgpath);
+		
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			goto imggrayscalerror;
 		}
 			
 		hc_safefree((void **)&imgpath);
 	}
 	
-	if ((ts->isgood = malloc(sizeof(int) * ts->imgc)) == NULL)
+	if ((ts->isgood = malloc(sizeof(int) * ts->imgc)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto isgoodmallocerror;
+	}
 
 	for (imgn = 0; imgn < ts->imgc; ++imgn)
 		ts->isgood[imgn] = imgn < goodc ? 1 : 0;
@@ -112,8 +120,6 @@ isgoodmallocerror:
 		nd_imgdestroy(ts->img + imgnn);
 
 	hc_safefree((void **) &(ts->img));
-			
-	nd_seterror(ND_READFILEERROR);
 fopenerror:
 scantexcounterror:
 imgmallocerror:
@@ -131,7 +137,7 @@ int hc_create(struct hc_hcascade *hc, int ww, int wh,
 
 	if ((hc->feature = malloc(sizeof(struct nd_image) * featurec))
 		== NULL) {	
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -177,7 +183,7 @@ static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 	
 	if ((hc->feature = malloc(sizeof(struct nd_image) * hc->featurec))
 		== NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto featuremallocerror;
 	}
 
@@ -186,7 +192,7 @@ static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 		int pixn;
 
 		if (fscanf(file, "%d %d", &w, &h) < 0) {
-			nd_seterror(ND_READFILEERROR);
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			goto scansizeerror;
 		}
 
@@ -196,7 +202,8 @@ static int hc_readfeatures(FILE *file, struct hc_hcascade *hc)
 		for (pixn = 0; pixn < w * h; ++pixn)
 			if (fscanf(file, "%lf", hc->feature[fn].data + pixn)
 				< 0) {
-				nd_seterror(ND_READFILEERROR);
+				nd_seterrormessage(ND_MSGFILEIOERROR,
+					__func__);
 				goto scanpixelerror;			
 			}
 	}
@@ -225,12 +232,12 @@ static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 	
 	if ((hc->wc = malloc(sizeof(struct hc_wclassifier) * hc->wccount))
 		== NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto wcmallocerror;
 	}
 	
 	if ((hc->wccoef = malloc(sizeof(double) * hc->wccount)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto wccoefmallocerror;
 	}
 
@@ -239,13 +246,13 @@ static int hc_readwcs(FILE *file, struct hc_hcascade *hc)
 			&(hc->wc[wcn].x), &(hc->wc[wcn].y),
 			&(hc->wc[wcn].w), &(hc->wc[wcn].h),
 			&(hc->wc[wcn].ineqdir), &(hc->wc[wcn].thres)) == EOF) {
-			nd_seterror(ND_READFILEERROR);
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			goto wcscanerror;	
 		}
 
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
 		if (fscanf(file, "%lf", hc->wccoef + wcn) == EOF) {
-			nd_seterror(ND_READFILEERROR);
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			goto wccoefscanerror;			
 		}
 
@@ -275,15 +282,15 @@ static int hc_readstages(FILE *file, struct hc_hcascade *hc)
 	
 	if ((hc->stage = malloc(sizeof(struct hc_stage) * hc->stagecount))
 		== NULL) {	
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto stagemallocerror;
 	}
 
 	for (stn = 0; stn < hc->stagecount; ++stn)
 		if (fscanf(file, "%d %lf", &(hc->stage[stn].wcc),
 			&(hc->stage[stn].thres)) == EOF) {
-				
-				nd_seterror(ND_READFILEERROR);
+				nd_seterrormessage(ND_MSGFILEIOERROR,
+					__func__);
 				goto scanstageerror;
 		}
 
@@ -303,13 +310,13 @@ int hc_hcascaderead(struct hc_hcascade *hc, const char *hcpath)
 	assert(hc != NULL && hcpath != NULL);
 
 	if ((file = fopen(hcpath, "r")) == NULL) {
-		nd_seterror(ND_FOPENERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		goto openfileerror;
 	}
 
 	if (fscanf(file, "%d %d %d %d %d\n", &(hc->ww), &(hc->wh),
 		&(hc->featurec), &(hc->wccount), &(hc->stagecount)) == EOF) {
-		nd_seterror(ND_READFILEERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		goto scanheadererror;
 	}
 
@@ -352,13 +359,13 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 	assert(hc != NULL && hcpath != NULL && hc_hcisvalid(hc));
 
 	if ((file = fopen(hcpath, "w")) == NULL) {
-		nd_seterror(ND_FOPENERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		return (-1);
 	}
 
 	if (fprintf(file, "%d %d %d %d %d\n", hc->ww, hc->wh,
 		hc->featurec, hc->wccount, hc->stagecount) < 0) {
-		nd_seterror(ND_WRITEFILEERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		return (-1);
 	}
 
@@ -368,7 +375,7 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 
 		if (fprintf(file, "%d %d ",
 			hc->feature[fn].w, hc->feature[fn].h) < 0) {
-			nd_seterror(ND_WRITEFILEERROR);
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			return (-1);
 		}
 
@@ -378,7 +385,8 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 			if (fprintf(file, "%d%c",
 				(int) hc->feature[fn].data[pixn],
 				(pixn != pixc - 1) ? ' ' : '\n') < 0) {
-				nd_seterror(ND_WRITEFILEERROR);
+				nd_seterrormessage(ND_MSGFILEIOERROR,
+					__func__);
 				return (-1);
 			}
 	}
@@ -388,26 +396,29 @@ int hc_hcascadewrite(struct hc_hcascade *hc, const char *hcpath)
 			hc->wc[wcn].x, hc->wc[wcn].y,
 			hc->wc[wcn].w, hc->wc[wcn].h, 
 			(int) hc->wc[wcn].ineqdir, hc->wc[wcn].thres) < 0) {
-				nd_seterror(ND_WRITEFILEERROR);
+				nd_seterrormessage(ND_MSGFILEIOERROR,
+					__func__);
 				return (-1);
 			}
 
 	for (wcn = 0; wcn < hc->wccount; ++wcn)
 		if (fprintf(file, "%lf%c", hc->wccoef[wcn],
 			(wcn != hc->wccount - 1) ? ' ' : '\n') < 0) {
-				nd_seterror(ND_WRITEFILEERROR);
+				nd_seterrormessage(ND_MSGFILEIOERROR,
+					__func__);
 				return (-1);
 			}
 
 	for (stn = 0; stn < hc->stagecount; ++stn)
 		if (fprintf(file, "%d %lf\n",
 			hc->stage[stn].wcc, hc->stage[stn].thres) < 0) {
-				nd_seterror(ND_WRITEFILEERROR);
+				nd_seterrormessage(ND_MSGFILEIOERROR,
+					__func__);
 				return (-1);
 			}
 
 	if (fclose(file) == EOF) {
-		nd_seterror(ND_FCLOSEERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		return (-1);
 	}
 
@@ -549,7 +560,7 @@ int hc_imgintegral(struct nd_image *img)
 	int cn;
 
 	if ((c = malloc(sizeof(double) * img->w * img->h)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -753,24 +764,24 @@ static int hc_findbestwc(const struct hc_hcascade *hc,
 
 	if ((wc = malloc(sizeof(struct hc_wclassifier) * threadwcc * tc))
 		== NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto wcmallocerror;
 	}
 	
 	if ((thrs = malloc(sizeof(pthread_t) * tc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto thrsmallocerror;
 	}
 	
 	if ((threadarg = (struct hc_findwcthreadarg *)
 		malloc(sizeof(struct hc_findwcthreadarg) * tc)) == NULL) {	
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto threadargmallocerror;
 	}
 
 	if ((threadret = (struct hc_findwcthreadret **)
 		malloc(sizeof(struct hc_findwcthreadret *) * tc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto threadretmallocerror;
 	}
 
@@ -826,7 +837,9 @@ static int hc_findbestwc(const struct hc_hcascade *hc,
 
 		for (tn = 0; tn < tc; ++tn)
 			if (threadret[tn] == NULL) {
-				nd_seterror(-1);
+				nd_seterrormessage(
+					"error in one or more threads ",
+					__func__);
 				goto threaderror;
 			}
 			else if (threadret[tn]->minwcerr < *minwcerr) {
@@ -884,13 +897,13 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	}
 
 	if ((iserror = malloc(sizeof(int) * ts->imgc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto iserrormallocerror;
 	}
 
 	if (*weights == NULL) {
 		if ((w = malloc(sizeof(double) * ts->imgc)) == NULL) {
-			nd_seterror(ND_ALLOCFAULT);
+			nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 			goto weightsmallocerror;
 		}
 	
@@ -940,7 +953,7 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 			* hc->wccount)) == NULL
 			|| (newwccoef = realloc(hc->wccoef, sizeof(double)
 			* hc->wccount)) == NULL) {
-			nd_seterror(ND_ALLOCFAULT);
+			nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 			goto newwcreallocerror;
 		}
 		
@@ -962,7 +975,7 @@ int hc_findwc(struct hc_hcascade *hc, struct hc_trainingset *ts,
 	hc->stagecount = 1;
 	
 	if ((hc->stage = malloc(sizeof(struct hc_stage))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto stagemallocerror;
 	}
 
@@ -1085,7 +1098,7 @@ static int addstage(struct hc_hcascade *hc, int *stagemaxc, int wcc)
 
 		if ((hc->stage = realloc(hc->stage,
 			sizeof(struct hc_stage) * (*stagemaxc))) == NULL) {
-			nd_seterror(ND_ALLOCFAULT);
+			nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 			return (-1);
 		}
 	}
@@ -1114,18 +1127,18 @@ int hc_buildcascade(struct hc_hcascade *hc, struct hc_trainingset *ts,
 
 	if ((hc->stage = (struct hc_stage *) malloc(sizeof(struct hc_stage)
 		* stagemaxc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto stagemallocerror;
 	}
 
 	if ((hvsum = (double *) malloc(sizeof(double) * ts->imgc)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto hvsummallocerror;
 	}
 
 	if ((goodhvsum = (double *) malloc(sizeof(double) * ts->imgc))
 		== NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto goodhvsummallocerror;
 	}
 

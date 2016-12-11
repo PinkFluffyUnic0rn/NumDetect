@@ -255,8 +255,7 @@ int getperspmat(int w, int h, struct nd_matrix3 *m)
 	outpoints[7] = 100 + h / 2 + 4 * 7 / 3;
 
 	if (nd_getpersptransform(inpoints, outpoints, m) < 0) {
-		fprintf(stderr, "nd_getpersptransform: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
@@ -319,28 +318,24 @@ int getorignum(struct nd_image *imgorig, struct nd_vector3 p[4],
 	outpoints[6] = 0; 	outpoints[7] = winh;
 
 	if (nd_getpersptransform(inpoints, outpoints, &persporig) < 0) {
-		fprintf(stderr, "nd_getpersptransform: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
 	if (nd_imgapplytransform(imgorig, &persporig) < 0) {
-		fprintf(stderr, "nd_imgapplytransform: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 	
 	if (nd_imgcreate(imginwin, winw, winh, imgorig->format) < 0) {
-		fprintf(stderr, "nd_imgcreate: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
 	if (nd_imgcrop(imgorig, 0, 0, winw, winh, imginwin) < 0) {
 		nd_imgdestroy(imginwin);
 		
-		fprintf(stderr, "nd_imgcrop: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
@@ -357,8 +352,7 @@ int normalizenum(struct nd_image *imginwin)
 	nd_imgcopy(imginwin, &imghsv);
 	
 	if (nd_imghsvval(&imghsv) < 0) {
-		fprintf(stderr, "nd_imghsvval: %s\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 		
@@ -370,14 +364,12 @@ int normalizenum(struct nd_image *imginwin)
 	outpoints[6] = 0.0;		outpoints[7] = imginwin->h;
 
 	if (nd_getpersptransform(inpoints, outpoints, &persp) < 0) {
-		fprintf(stderr, "nd_getpersptransform: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (nd_imgapplytransform(imginwin, &persp) < 0) {
-		fprintf(stderr, "nd_imgapplytransform: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
@@ -399,8 +391,7 @@ int detectedtofile(struct nd_image *img, struct nd_image *imgorig,
 	}
 
 	if (nd_imgwrite(imgorig, imgpath) < 0) {
-		fprintf(stderr, "nd_imgwrite: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
@@ -440,8 +431,7 @@ int detectedtofile(struct nd_image *img, struct nd_image *imgorig,
 			if (nd_imgwrite(&imginwin, imgpath) < 0) {
 				nd_imgdestroy(&imginwin);
 				
-				fprintf(stderr, "nd_imgwrite: %s.\n",
-					nd_strerror(nd_error));
+				fprintf(stderr, nd_geterrormessage());
 				return (-1);
 			}
 		
@@ -450,8 +440,7 @@ int detectedtofile(struct nd_image *img, struct nd_image *imgorig,
 			if (nd_imgwrite(&imginwin, imgpathnormalized) < 0) {
 				nd_imgdestroy(&imginwin);
 				
-				fprintf(stderr, "nd_imgwrite: %s.\n",
-					nd_strerror(nd_error));
+				fprintf(stderr, nd_geterrormessage());
 				return (-1);
 			}
 
@@ -518,8 +507,7 @@ int scanloop(struct nd_image *img, struct nd_image *imgorig,
 	struct hcdata hcd;
 
 	if (hc_hcascaderead(&(hcd.hc), hcpath) < 0) {
-		fprintf(stderr, "nd_hcascaderead: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
@@ -533,8 +521,7 @@ int scanloop(struct nd_image *img, struct nd_image *imgorig,
 		int rc;
 
 		if (nd_pslock(1) < 0) {
-			fprintf(stderr, "nd_pslock: %s.\n",
-				nd_strerror(nd_error));
+			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}
 
@@ -545,16 +532,13 @@ int scanloop(struct nd_image *img, struct nd_image *imgorig,
 			return (-1);
 			
 		if (nd_imgapplytransform(img, &perspmat) < 0) {
-			fprintf(stderr, "nd_imgapplytransform: %s.\n",
-				nd_strerror(nd_error));
+			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}
 
 		if (hc_imgpyramidscan(&(hcd.hc), img, &r, &rc,
 			&(hcd.scanconf)) < 0) {
-			fprintf(stderr, "nd_imgpyramidscan: %s.\n",
-				nd_strerror(nd_error));
-
+			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}
 
@@ -565,8 +549,7 @@ int scanloop(struct nd_image *img, struct nd_image *imgorig,
 		}
 
 		if (nd_psunlock(1) < 0) {
-			fprintf(stderr, "nd_psunlock: %s.\n",
-				nd_strerror(nd_error));
+			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}
 	}
@@ -663,8 +646,7 @@ int decodeloop(struct avdata *av, struct nd_image *img,
 			rgbdatatoimg(rgbdataorig, rgblinesizeorig, imgorig);
 			
 			if (nd_psunlock(0) < 0) {
-				fprintf(stderr, "nd_psunlock: %s.\n",
-					nd_strerror(nd_error));
+				fprintf(stderr, nd_geterrormessage());
 				return (-1);
 			}
 		}
@@ -698,15 +680,13 @@ int main(int argc, char **argv)
 		return 1;
 
 	if (nd_psinitprefork() < 0) {
-		fprintf(stderr, "nd_psinitprefork: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 	
 	if ((chpid = fork()) == 0) {
 		if (nd_psinitpostfork(1) < 0) {
-			fprintf(stderr, "nd_psinitpostfork: %s.\n",
-				nd_strerror(nd_error));
+			fprintf(stderr, nd_geterrormessage());
 			return 1;
 		}
 		
@@ -714,9 +694,7 @@ int main(int argc, char **argv)
 			return 1;
 		
 		if (nd_psclose(1) < 0) {
-			fprintf(stderr, "nd_psclose: %s.\n",
-				nd_strerror(nd_error));
-			perror("");
+			fprintf(stderr, nd_geterrormessage());
 			return 1;
 		}
 	}
@@ -724,8 +702,7 @@ int main(int argc, char **argv)
 		int retval;
 	
 		if (nd_psinitpostfork(0) < 0) {
-			fprintf(stderr, "nd_psinitpostfork: %s.\n",
-				nd_strerror(nd_error));
+			fprintf(stderr, nd_geterrormessage());
 			return 1;
 		}
 
@@ -733,25 +710,21 @@ int main(int argc, char **argv)
 			return 1;
 	
 		if (nd_pslock(0) < 0) {
-			fprintf(stderr, "nd_pslock: %s.\n",
-				nd_strerror(nd_error));
+			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}
 
 		img->data = NULL;
 		
 		if (nd_psunlock(0) < 0) {
-			fprintf(stderr, "nd_psunlock: %s.\n",
-				nd_strerror(nd_error));
+			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}	
 		
 		wait(&retval);
 		
 		if (nd_psclose(0) < 0) {
-			fprintf(stderr, "nd_psclose: %s.\n",
-				nd_strerror(nd_error));
-			perror("");
+			fprintf(stderr, nd_geterrormessage());
 			return 1;
 		}
 	}

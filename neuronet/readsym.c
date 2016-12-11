@@ -4,25 +4,34 @@
 #include <math.h>
 
 #include "nd_image.h"
-
-#include "neuronet.h"
+#include "nd_error.h"
+#include "nn_neuronet.h"
 
 #define WIN_W 9
 #define WIN_H 20
 
-void loadimgtoinput(const char *imgpath, double *input)
+int loadimgtoinput(const char *imgpath, double *input)
 {
 	struct nd_image img;
 	int pixn;
 	
-	nd_imgread(imgpath, &img); 
-	nd_imggrayscale(&img);
+	if (nd_imgread(imgpath, &img) < 0) {
+		fprintf(stderr, nd_geterrormessage());
+		return (-1);
+	}
+	
+	if (nd_imggrayscale(&img) < 0) {
+		fprintf(stderr, nd_geterrormessage());
+		return (-1);
+	}
 
 	for (pixn = 0; pixn < img.w * img.h; ++pixn) {
 		input[pixn] = 2.0 * img.data[pixn] - 1.0;
 	}
 
 	free(img.data);
+
+	return 0;
 }
 
 int findpattern(struct nn_neuronet *nnet, double *input)
@@ -34,7 +43,8 @@ int findpattern(struct nn_neuronet *nnet, double *input)
 	
 	outputc = nnet->nodec[nnet->levelc - 1];
 	
-	out = (double *) malloc(sizeof(double) * outputc);	
+	if ((out = (double *) malloc(sizeof(double) * outputc)) == NULL)
+		return (-1);
 	
 	nn_neuroneteval(nnet, input, out);
 
@@ -65,9 +75,13 @@ int main(int argc, const char **argv)
 
 	imgdata = (double *) malloc(sizeof(double *) * WIN_W * WIN_H);
 	
-	loadimgtoinput(argv[2], imgdata);
+	if (loadimgtoinput(argv[2], imgdata) < 0)
+		return 1;
 
-	nn_neuronetfromfile(&nnet, argv[1]);
+	if (nn_neuronetfromfile(&nnet, argv[1]) < 0) {
+		fprintf(stderr, nd_geterrormessage());
+		return 1;
+	}
 
 	int res;
 	char a[23] = "0123456789abcehkmoptxy";
@@ -78,13 +92,6 @@ int main(int argc, const char **argv)
 		printf("%c", a[res] );
 	
 	fflush(stdout);
-/*	
-	if (res != -1)
-		printf("%c", a[res] );
-	else
-		printf("bad");
 
-	fflush(stdout);
-*/
 	return 0;
 }

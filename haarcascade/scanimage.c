@@ -14,6 +14,25 @@
 
 #include "hc_scanimgpyr.h"
 
+int imgcroptofile(struct nd_image *img, struct hc_rect *r, const char *path)
+{
+	struct nd_image imginwin;
+
+	if (nd_imgcreate(&imginwin, abs(r->x1 - r->x0),
+		abs(r->y1 - r->y0), img->format) < 0)
+		return (-1);
+	
+	if (nd_imgcrop(img, r->x0, r->y0,
+		abs(r->x1 - r->x0),
+		abs(r->y1 - r->y0), &imginwin))
+		return (-1);
+		
+	if (nd_imgwrite(&imginwin, path))
+		return (-1);
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {	
 	struct hc_hcascade hc;
@@ -26,19 +45,17 @@ int main(int argc, char **argv)
 	int rn;
 	
 	if (hc_hcascaderead(&hc, argv[1]) < 0) {
-		fprintf(stderr, "hc_hcascaderead: %s.\n",
-			argv[1]);
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 	
 	if (nd_imgread(argv[2], &img) < 0) {
-		fprintf(stderr, "nd_imgread: %s.\n", nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	if (nd_imggrayscale(&img) < 0) {
-		fprintf(stderr, "nd_imggrayscale: %s.\n",
-			nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
@@ -50,7 +67,7 @@ int main(int argc, char **argv)
 	clock_gettime(CLOCK_REALTIME, &ts);
 
 	hc_imgpyramidscan(&hc, &img, &newr, &newrc, &scanconf);
-
+	
 	clock_gettime(CLOCK_REALTIME, &te);
 	printf("%lf\n", te.tv_sec + te.tv_nsec * 1e-9
 		- (ts.tv_sec + ts.tv_nsec * 1e-9));
@@ -65,19 +82,11 @@ int main(int argc, char **argv)
 		newr[rn].y0 = (int) (newr[rn].y0) - (rh * 0.15);
 		newr[rn].y1 = newr[rn].y1 + (rh * 0.15);
 
-		if (newr[rn].y0 >= 0 && newr[rn].y1 < img.h) {
-			struct nd_image imginwin;
-
-			nd_imgcreate(&imginwin, abs(newr[rn].x1 - newr[rn].x0),
-				abs(newr[rn].y1 - newr[rn].y0), img.format);
-			
-			nd_imgcrop(&img,
-				newr[rn].x0, newr[rn].y0,
-				abs(newr[rn].x1 - newr[rn].x0),
-				abs(newr[rn].y1 - newr[rn].y0), &imginwin);
-			
-			nd_imgwrite(&imginwin, a);
-		}
+		if (newr[rn].y0 >= 0 && newr[rn].y1 < img.h)
+			if (imgcroptofile(&img, newr + rn, a) < 0) {
+				fprintf(stderr, nd_geterrormessage());
+				return 1;
+			}
 	}
 
 	return 0;

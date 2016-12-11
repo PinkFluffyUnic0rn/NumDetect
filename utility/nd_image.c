@@ -43,7 +43,7 @@ int nd_imgcreate(struct nd_image *img, int w, int h,
 	
 	if ((img->data = malloc(sizeof(double) * w * h
 		* nd_imgchanscount(format))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -60,7 +60,7 @@ int nd_imgcopy(const struct nd_image *imgsrc, struct nd_image *imgdest)
 
 	if ((imgdest->data = malloc(sizeof(double) * imgdest->w * imgdest->h
 		* nd_imgchanscount(imgdest->format))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -91,7 +91,7 @@ int nd_imgread(const char *imgpath, struct nd_image *img)
 	sur = cairo_image_surface_create_from_png(imgpath);
 	
 	if (cairo_surface_status(sur) != CAIRO_STATUS_SUCCESS) {
-		nd_seterror(ND_OPENPNGERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		return (-1);
 	}
 	
@@ -107,14 +107,14 @@ int nd_imgread(const char *imgpath, struct nd_image *img)
 		break;
 	
 	default:
-		nd_seterror(ND_WRONGFORMAT);
+		nd_seterrormessage("image has a wrong format", __func__);
 		return (-1);
 	}
 
 	if ((img->data = malloc(sizeof(double *)
 		* img->w * img->h * nd_imgchanscount(img->format)))
 		== NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 	
@@ -153,14 +153,11 @@ int nd_imgwrite(const struct nd_image *img, const char *imgpath)
 	sur = cairo_image_surface_create(CAIRO_FORMAT_RGB24, img->w, img->h);	
 	
 	if (cairo_surface_status(sur) != CAIRO_STATUS_SUCCESS) {
-		nd_seterror(ND_OPENPNGERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		return (-1);
 	}
 	
-	if ((surdata = cairo_image_surface_get_data(sur)) == NULL) {
-		nd_seterror(ND_CAIROERROR);
-		return (-1);
-	}
+	surdata = cairo_image_surface_get_data(sur);
 	
 	switch(img->format) {
 	case ND_PF_GRAYSCALE:
@@ -203,12 +200,12 @@ int nd_imgwrite(const struct nd_image *img, const char *imgpath)
 		break;
 	
 	default:
-		nd_seterror(ND_INVALIDIMAGE);
+		nd_seterrormessage("image has a wrong format", __func__);
 		return (-1);
 	}
 
 	if (cairo_surface_write_to_png(sur, imgpath) != CAIRO_STATUS_SUCCESS) {
-		nd_seterror(ND_FOPENERROR);
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 		return (-1);
 	}
 	
@@ -226,7 +223,7 @@ int nd_imghsvval(struct nd_image *img)
 	assert(nd_imgisvalid(img));
 
 	if ((hsvval = malloc(sizeof(double) * img->w * img->h)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -264,7 +261,7 @@ int nd_imggrayscale(struct nd_image *img)
 	assert(nd_imgisvalid(img));
 
 	if ((grayscale = malloc(sizeof(double) * img->w * img->h)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -463,7 +460,7 @@ int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 
 	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h))
 		== NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -535,7 +532,7 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 	struct nd_image tmpimg;
 
 	assert(inimg != NULL && hrel > 0.0 && wrel > 0.0 && outimg != NULL);
-	assert(nd_imgisvalid(inimg) && inimg->format == ND_PF_GRAYSCALE);
+	assert(nd_imgisvalid(inimg));
 
 	tmpimg.w = ceil(wrel * inimg->w);	
 	tmpimg.h = ceil(hrel * inimg->h);
@@ -543,7 +540,7 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 
 	if ((tmpimg.data = malloc(sizeof(double) * tmpimg.w * tmpimg.h
 		* nd_imgchanscount(tmpimg.format))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 	
@@ -640,7 +637,7 @@ int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
 
 	if ((newdata = malloc(sizeof(double) * img->w * img->h
 		* nd_imgchanscount(img->format))) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 

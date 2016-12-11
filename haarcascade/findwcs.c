@@ -22,7 +22,7 @@ int loadweights(double **weight, int *wcount)
 		return 1;
 	}
 
-	strsz = 0;	
+	strsz = 0;
 	if (getline(&str, &strsz, weightfile) <= 0)
 		return (-1);
 
@@ -85,42 +85,42 @@ int main(int argc, const char **argv)
 	int wcount;
 
 	if (argc < 5) {
-		printf("%s", "Too few agruments.");
+		fprintf(stderr, "%s", "Too few agruments.");
 		return 1;
 	}
 
 	if (hc_readtrset(&ts, argv[1]) < 0) {
-		printf("hc_readtrset: %s.\n", nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 	
 	if (hc_hcascaderead(&hc, argv[2]) < 0) {
-		printf("hc_hcascaderead: %s.\n", nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	iters = strtol(argv[4], &next, 0);
 
 	if (argv[4] == next) {
-		printf("%s", "Wrong format of iterations count.\n");
+		fprintf(stderr, "%s", "Wrong format of iterations count.\n");
 		return 1;
 	}
 
 	if (loadweights(&weight, &wcount) < 0
 		|| (weight != NULL && wcount != ts.imgc)) {
-		printf("%s", "Error while loading weights.\n");
+		fprintf(stderr, "%s", "Error while loading weights.\n");
 		return 1;	
 	}
 
 	if (hc_findwc(&hc, &ts, &weight, iters) < 0) {
-		printf("hc_findwcs: %s.\n", nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
 	saveweights(weight, ts.imgc);
 
 	if (hc_hcascadewrite(&hc, argv[3]) < 0) {
-		printf("hc_hcascadewrite: %s.\n", nd_strerror(nd_error));
+		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 

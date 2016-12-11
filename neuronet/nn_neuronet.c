@@ -4,7 +4,8 @@
 #include <math.h>
 #include <assert.h>
 
-#include "neuronet.h"
+#include "nn_neuronet.h"
+#include "nd_error.h"
 
 int nn_createneuronet(struct nn_neuronet *nnet, int inputc,
 	int levelc, const int *neuronc)
@@ -16,11 +17,15 @@ int nn_createneuronet(struct nn_neuronet *nnet, int inputc,
 
 	nnet->levelc = levelc;
 	
-	if ((nnet->nodec = malloc(sizeof(int) * levelc)) == NULL)
+	if ((nnet->nodec = malloc(sizeof(int) * levelc)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto nodecmallocerror;
+	}
 
-	if ((nnet->weightc = malloc(sizeof(int) * levelc)) == NULL)
+	if ((nnet->weightc = malloc(sizeof(int) * levelc)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto weightcmallocerror;
+	}
 
 	nnet->inputc = inputc;
 
@@ -36,22 +41,30 @@ int nn_createneuronet(struct nn_neuronet *nnet, int inputc,
 		totalw += nnet->weightc[i];
 	}
 
-	if ((nnet->weight = malloc(sizeof(double) * totalw)) == NULL)
+	if ((nnet->weight = malloc(sizeof(double) * totalw)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto weightmallocerror;
+	}
 	
-	if ((nnet->out = malloc(sizeof(double) * totaln)) == NULL)
+	if ((nnet->out = malloc(sizeof(double) * totaln)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto outmallocerror;
+	}
 
-	if ((nnet->vout = malloc(sizeof(double *) * (levelc + 1))) == NULL)
+	if ((nnet->vout = malloc(sizeof(double *) * (levelc + 1))) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto voutmallocerror;
+	}
 
 	for (i = 0; i < totalw; ++i)
 		nnet->weight[i] = (double) (rand() % 10001) / 5000.0 - 1.0;
 
 	for (i = 0; i < levelc; ++i)
 		if ((nnet->vout[i + 1]
-			= malloc(sizeof(double) * nnet->nodec[i])) == NULL)
+			= malloc(sizeof(double) * nnet->nodec[i])) == NULL) {
+			nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 			goto voutelmallocerror;
+		}
 
 	return 0;
 
@@ -201,12 +214,26 @@ int nn_neuronettofile(const struct nn_neuronet *nnet, const char *fname)
 
 	nnfile = fopen(fname, "w");
 
-	fprintf(nnfile, "%u ",nnet->levelc);
+	if (fprintf(nnfile, "%u ",nnet->levelc) < 0) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		return (-1);
+	}
 	
-	fprintf(nnfile, "%u ",nnet->inputc);	
+	if (fprintf(nnfile, "%u ",nnet->inputc) < 0) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		return (-1);
+	}
+	
 	for (nl = 0; nl < nnet->levelc; ++nl)
-		fprintf(nnfile, "%u ", nnet->nodec[nl]);
-	fprintf(nnfile, "\n");	
+		if (fprintf(nnfile, "%u ", nnet->nodec[nl]) < 0) {
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+			return (-1);
+		}
+
+	if (fprintf(nnfile, "\n") < 0) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		return (-1);
+	}
 
 	int totalw = 0;
 	for (nl = 0; nl < nnet->levelc; ++nl)
@@ -214,7 +241,10 @@ int nn_neuronettofile(const struct nn_neuronet *nnet, const char *fname)
 
 	double *pw = nnet->weight;
 	for (nw	= 0; nw < totalw; ++nw)
-		fprintf(nnfile, "%.10lf\n", *pw++);
+		if (fprintf(nnfile, "%.10lf\n", *pw++) < 0) {
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+			return (-1);
+		}
 
 	return 0;
 }
@@ -230,14 +260,27 @@ int nn_neuronetfromfile(struct nn_neuronet *nnet, const char *fname)
 
 	nnfile = fopen(fname, "rb");
 
-	fscanf(nnfile, "%u", &levelc);
-	fscanf(nnfile, "%u", &inputc);	
+	if (fscanf(nnfile, "%u", &levelc) == EOF) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		goto scanflevelcerror;
+	}
+	
+	if (fscanf(nnfile, "%u", &inputc) == EOF) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		goto scanfinputcerror;
+	}
 
-	if ((nodec = (int *) malloc(sizeof(int) * levelc)) == NULL)
+	if ((nodec = (int *) malloc(sizeof(int) * levelc)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		goto nodecmallocerror;
+	}
 
-	for (nl = 0; nl < levelc; ++nl)
-		fscanf(nnfile, "%u", nodec + nl);
+	for (nl = 0; nl < levelc; ++nl) {
+		if (fscanf(nnfile, "%u", nodec + nl) == EOF) {
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+			goto scanfnodecerror;
+		}
+	}
 
 	if (nn_createneuronet(nnet, inputc, levelc, nodec) < 0)
 		goto createneuroneterror;
@@ -255,8 +298,11 @@ int nn_neuronetfromfile(struct nn_neuronet *nnet, const char *fname)
 	return 0;
 
 createneuroneterror:
+scanfnodecerror:
 	free(nodec);
 
 nodecmallocerror:
+scanfinputcerror:
+scanflevelcerror:
 	return (-1);
 }

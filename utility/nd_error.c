@@ -1,5 +1,8 @@
+#include <stdio.h>
+
 #include "nd_error.h"
 
+/*
 enum ND_ERROR nd_error;
 
 const char *terr[] = {
@@ -33,3 +36,15 @@ const char *nd_strerror(enum ND_ERROR err)
 
 	return terr[err];
 }
+*/
+
+void nd_seterrormessage(const char *msg, const char *funcname)
+{
+	sprintf(errormessage, "%s: %s.\n", funcname, msg);
+}
+
+const char *nd_geterrormessage()
+{
+	return errormessage;
+}
+

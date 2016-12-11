@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <assert.h>
 
 #include "nd_image.h"
 #include "nd_error.h"
@@ -191,7 +192,7 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 
 */
 	if ((mask = malloc(sizeof(int) * img->w * img->h)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -201,7 +202,7 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	if ((hlines = malloc(sizeof(double) * HOUGHMAXLINES * 2)) == NULL) {
 		safefree((void **)&mask);
 
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 	
@@ -336,6 +337,8 @@ int ed_findborder(struct nd_image *img, double inpoints[8])
 	struct lineseg lright;
 	int li1, li2;
 	double rho, theta;
+
+	assert(img != NULL && inpoints != NULL);
 /*
 	ed_removelowfreq(&img, 0.05, 0.0);
 
@@ -397,7 +400,7 @@ int ed_findborder(struct nd_image *img, double inpoints[8])
 
 // split image into four parts by a vertical axis
 	if ((imgparts = malloc(sizeof(struct nd_image) * 5)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
@@ -407,12 +410,12 @@ int ed_findborder(struct nd_image *img, double inpoints[8])
 	linescount = 100;
 	
 	if ((linesleft = malloc(sizeof(double) * 2 * linescount)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
 	if ((linesright = malloc(sizeof(double) * 2 * linescount)) == NULL) {
-		nd_seterror(ND_ALLOCFAULT);
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
