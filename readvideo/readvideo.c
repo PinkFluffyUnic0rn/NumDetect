@@ -41,6 +41,9 @@ struct playbackstate {
 	int64_t timestamp;
 };
 
+
+const int threadcount = 8;
+
 int openinput(AVFormatContext **s, const char *pathname, int *vstreamid)
 {
 	int ret;
@@ -511,9 +514,8 @@ int scanloop(struct nd_image *img, struct nd_image *imgorig,
 		return (-1);
 	}
 
-	hcd.scanconf.scalestep = 0.9;
-	hcd.scanconf.winhstep = 1;
-	hcd.scanconf.winwstep = 1;
+	hc_confbuild(&(hcd.scanconf),
+		hcd.hc.ww, hcd.hc.wh, img->w, img->h, 0.9, 1, 1, threadcount);
 
 	while (1) {
 		struct nd_matrix3 perspmat;
@@ -528,6 +530,9 @@ int scanloop(struct nd_image *img, struct nd_image *imgorig,
 		if (img->data == NULL)
 			return 0;
 
+struct timespec ts, te;
+clock_gettime(CLOCK_REALTIME, &ts);
+
 		if (getperspmat(img->w, img->h, &perspmat) < 0)
 			return (-1);
 			
@@ -541,6 +546,10 @@ int scanloop(struct nd_image *img, struct nd_image *imgorig,
 			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}
+
+clock_gettime(CLOCK_REALTIME, &te);
+printf("%lf\n", te.tv_sec + te.tv_nsec * 1e-9
+	- (ts.tv_sec + ts.tv_nsec * 1e-9));
 
 		if (rc) {
 			detectedtofile(img, imgorig, &perspmat,

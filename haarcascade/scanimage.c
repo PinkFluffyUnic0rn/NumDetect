@@ -65,9 +65,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	scanconf.scalestep = 0.9;
-	scanconf.winhstep = 1;
-	scanconf.winwstep = 1;
+	hc_confbuild(&scanconf, hc.ww, hc.wh, img.w, img.h, 0.9, 1, 1, 8);
 
 	struct timespec ts, te;
 	clock_gettime(CLOCK_REALTIME, &ts);
