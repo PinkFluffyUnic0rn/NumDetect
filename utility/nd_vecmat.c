@@ -5,6 +5,30 @@
 #include "nd_vecmat.h"
 #include "nd_error.h"
 
+int nd_scalarv3mult(const struct nd_vector3 *v, double s,
+	struct nd_vector3 *r)
+{
+	assert(v != NULL && r != NULL);
+
+	r->x = v->x * s;
+	r->y = v->y * s;
+	r->z = v->z * s;
+	
+	return 0;
+}
+
+int nd_v3lincomb(const struct nd_vector3 *v0, double s,
+	const struct nd_vector3 *v1, struct nd_vector3 *r)
+{
+	assert(v0 != NULL && v1 != NULL && r != NULL);
+	
+	r->x = v0->x + s * v1->x;
+	r->y = v0->y + s * v1->y;
+	r->z = v0->z + s * v1->z;
+	
+	return 0;
+}
+
 int nd_m3scale(struct nd_matrix3 *r, double x, double y, double z)
 {
 	assert(r != NULL);

@@ -18,6 +18,12 @@ struct nd_matrix3
 		_31, _32, _33;
 };
 
+int nd_scalarv3mult(const struct nd_vector3 *v, double s,
+	struct nd_vector3 *r);
+
+int nd_v3lincomb(const struct nd_vector3 *v0, double s,
+	const struct nd_vector3 *v1, struct nd_vector3 *r);
+
 int nd_m3scale(struct nd_matrix3 *r, double x, double y, double z);
 
 int nd_m3rotatex(struct nd_matrix3 *r, double ang);

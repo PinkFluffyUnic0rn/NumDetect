@@ -1,19 +1,33 @@
-CC=gcc
-SRC=readvideo.c
-HCSRC=../haarcascade/hc_hcascade.c ../haarcascade/hc_rect.c\
-../haarcascade/hc_scanimgpyr.c
-EDSRC=../edgedetect/ed_fft.c ../edgedetect/ed_edgedetect.c \
-../edgedetect/ed_findborder.c
-UTILSRC=../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c\
-../utility/nd_procsync.c
-OPT=-Wall
-LIB=-lavcodec -lavutil -lavformat -lswscale -pthread -lm \
-`pkg-config --cflags --libs gtk+-3.0`
-BIN=readvideo
-UTILINC=../utility
+CC = gcc
+
+UTILINC = ../utility
+BGMINC=../bgmodel
 HCINC=../haarcascade
 EDINC=../edgedetect
 
-all:
-	$(CC) $(SRC) $(HCSRC) $(EDSRC) $(UTILSRC) \
-	 -I$(HCINC) -I$(EDINC) -I$(UTILINC) -o $(BIN) $(OPT) $(LIB) 
+UTILOBJ = $(UTILINC)/nd_error.o $(UTILINC)/nd_image.o $(UTILINC)/nd_vecmat.o\
+$(UTILINC)/nd_procsync.o
+BGMOBJ=$(BGMINC)/bgmodel.o $(BGMINC)/em3d.o
+HCOBJ= $(HCINC)/hc_hcascade.o $(HCINC)/hc_rect.o $(HCINC)/hc_scanimgpyr.o
+EDOBJ = $(EDINC)/ed_edgedetect.o $(EDINC)/ed_findborder.o
+READVIDEOOBJ= $(UTILOBJ) $(BGMOBJ) $(HCOBJ) $(EDOBJ) readvideo.o gui.o
+
+READVIDEOBIN = ../bin/readvideo
+
+INC = -I$(UTILINC) -I$(BGMINC) -I$(HCINC) -I$(EDINC)
+LIB=-lavcodec -lavutil -lavformat -lswscale -pthread -lm  \
+-lxcb -lxcb-keysyms `pkg-config --cflags --libs gtk+-3.0`
+CFLAGS = $(INC) -Wall $(LIB)
+
+all : $(READVIDEOBIN)
+
+$(READVIDEOBIN): $(READVIDEOOBJ)
+	$(CC) -o $@ $^ $(CFLAGS)
+
+%.o : %.c $(INC)/*.h
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+.PHONY : clean
+
+clean :
+	rm -f $(READVIDEOOBJ) 

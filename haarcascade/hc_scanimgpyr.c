@@ -30,6 +30,8 @@ int hc_confbuild(struct hc_scanconfig *conf, int ww, int wh,
 	conf->tc = 0;
 	
 	n = floor(log(MAX((double) ww / w, (double) wh / h)) / log(d));
+
+	d = pow(d, 2.0);
 	
 	a = (1 - pow(d, n)) / tc / (1 - d);
 
@@ -58,8 +60,8 @@ int hc_confbuild(struct hc_scanconfig *conf, int ww, int wh,
 			--e;
 		}
 
-		conf->map[conf->tc]
-			= realloc(conf->map[conf->tc], sizeof(int) * (++c));
+		conf->map[conf->tc] = realloc(conf->map[conf->tc],
+			sizeof(int) * (++c));
 		conf->map[conf->tc][c - 1] = -1;
 	
 		++(conf->tc);
@@ -86,6 +88,7 @@ static int hc_fastimgscan(struct nd_image *img, double *sd,
 			if (hc_fastimgclassify(hc, &imginwin,
 				img->w, sd[y * img->w + x])) {
 				++(*roffset);
+			
 				if ((*r = realloc(*r, sizeof(struct hc_rect)
 					* (*roffset))) == NULL)
 					return (-1);
@@ -268,8 +271,6 @@ void *pyrcheckfunc(void *a)
 			return NULL;
 
 		
-		nd_imgdestroy(&scaledimg);
-
 		for (rn = 0; rn < tmprc; ++rn) {
 			tmpr[rn].x0 /= pow(arg->conf->scalestep, *curidx);
 			tmpr[rn].y0 /= pow(arg->conf->scalestep, *curidx);
@@ -282,6 +283,8 @@ void *pyrcheckfunc(void *a)
 		memcpy(ret->r + ret->rc, tmpr, sizeof(struct hc_rect) * tmprc);
 		ret->rc += tmprc;
 
+		nd_imgdestroy(&scaledimg);
+		
 		++curidx;
 	}
 
@@ -327,10 +330,21 @@ int hc_imgpyramidscan(struct hc_hcascade *hc, const struct nd_image *img,
 		rc += threadret[i]->rc;
 	}
 
+
+	free(thread);
+	free(threadarg);
+	
+	for (i = 0; i < conf->tc; ++i) {
+		free(threadret[i]->r);
+		free(threadret[i]);
+	}
+	free(threadret);
+
 	*newr = NULL;
 	*newrc = 0;
 	if (rc > 0 && hc_conrect(r, rc, newr, newrc) < 0)
 		return (-1);
+
 
 	return 0;
 }

@@ -21,6 +21,8 @@ int main(int argc, const char **argv)
 	tc = atoi(argv[4]);
 
 	n = floor(log(MAX((double) WIN_W / w, (double) WIN_H / h)) / log(sc));
+
+	sc = pow(sc, 2);
 	
 	a = (1 - pow(sc, n)) / tc / (1 - sc);
 

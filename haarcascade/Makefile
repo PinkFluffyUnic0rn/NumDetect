@@ -1,18 +1,37 @@
 CC = gcc
-CCPARAM = -Wall -O3
-UTILSRC = ../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c
-LIB = `pkg-config --cflags --libs gtk+-3.0` -lm
 UTILINC = ../utility
-INITHCSRC = initcascade.c hc_hcascade.c
-INITHCBIN = initcascade
-FINDWCSRC = findwcs.c hc_hcascade.c
-FINDWCBIN = findwcs
-BUILDHCSRC = buildcascade.c hc_hcascade.c
-BUILDHCBIN = buildcascade
-SCANIMGSRC = scanimage.c hc_rect.c hc_hcascade.c hc_scanimgpyr.c
-SCANIMGBIN = scanimage
-all:
-	$(CC) $(INITHCSRC) $(UTILSRC) -I$(UTILINC) -o $(INITHCBIN) $(CCPARAM) $(LIB)
-	$(CC) $(FINDWCSRC) $(UTILSRC) -I$(UTILINC) -o $(FINDWCBIN) $(CCPARAM) $(LIB)
-	$(CC) $(BUILDHCSRC) $(UTILSRC) -I$(UTILINC) -o $(BUILDHCBIN) $(CCPARAM) $(LIB)
-	$(CC) $(SCANIMGSRC) $(UTILSRC) -I$(UTILINC) -o $(SCANIMGBIN) $(CCPARAM) $(LIB)
+UTILOBJ = $(UTILINC)/nd_error.o $(UTILINC)/nd_image.o $(UTILINC)/nd_vecmat.o
+INITHCOBJ = $(UTILOBJ) initcascade.o hc_hcascade.o
+FINDWCOBJ = $(UTILOBJ) findwcs.o hc_hcascade.o
+BUILDHCOBJ = $(UTILOBJ) buildcascade.o hc_hcascade.o
+SCANIMGOBJ = $(UTILOBJ) scanimage.o hc_rect.o hc_hcascade.o hc_scanimgpyr.o
+INITHCBIN = ../bin/initcascade
+FINDWCBIN = ../bin/findwcs
+BUILDHCBIN = ../bin/buildcascade
+SCANIMGBIN = ../bin/scanimage
+
+LIB = `pkg-config --cflags --libs gtk+-3.0` -lm
+INC = -I$(UTILINC)
+CFLAGS = $(INC) -Wall -O3 $(LIB)
+
+all : $(INITHCBIN) $(FINDWCBIN) $(BUILDHCBIN) $(SCANIMGBIN)
+
+$(INITHCBIN) : $(INITHCOBJ)
+	$(CC) -o $@ $^ $(CFLAGS)
+
+$(FINDWCBIN) : $(FINDWCOBJ)
+	$(CC) -o $@ $^ $(CFLAGS)
+
+$(BUILDHCBIN) : $(BUILDHCOBJ)
+	$(CC) -o $@ $^ $(CFLAGS)
+
+$(SCANIMGBIN) : $(SCANIMGOBJ)
+	$(CC) -o $@ $^ $(CFLAGS)
+
+%.o : %.c $(INC)/*.h
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+.PHONY : clean
+
+clean :
+	rm -f $(INITHCOBJ) $(FINDWCOBJ) $(BUILDHCOBJ) $(SCANINGOBJ)

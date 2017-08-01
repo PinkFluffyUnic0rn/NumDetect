@@ -16,7 +16,6 @@
 
 #include "nd_image.h"
 #include "nd_procsync.h"
-#include "bgmodel.h"
 #include "hc_hcascade.h"
 #include "hc_scanimgpyr.h"
 #include "ed_findborder.h"
@@ -48,8 +47,6 @@ struct playbackstate {
 
 
 const int threadcount = 8;
-
-struct nd_image *drawimg;
 
 int openinput(AVFormatContext **s, const char *pathname, int *vstreamid)
 {
@@ -458,7 +455,6 @@ int rectgetorignum(struct nd_image *imgorig, struct hc_rect *r,
 int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 {
 	struct hcdata hcd;
-	struct bg_context ctx;
 	struct nd_matrix3 perspmat;
 	struct nd_image imggray;
 	struct nd_image imgmini;
@@ -476,22 +472,16 @@ int scanloop(struct nd_image *img, const char *hcpath, const char *outputdir)
 		return (-1);
 	}
 
-	if (bg_initcontext(&ctx, 5, 0.3, 0.05, 640, img->h * 640 / img->w,
-		30, 25) < 0)
-		return (-1);
-/*
 	if (nd_imgcreate(&imggray, img->w, img->h, ND_PF_GRAYSCALE) < 0) {
 		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
-*/
+
 	if (getperspmat(IMGWIDTH, img->h * IMGWIDTH / img->w, &perspmat) < 0)
 		return (-1);
-	
+		
 	while (1) {
 		struct nd_image imgtr;
-		struct bg_rect *fgr;
-		int fgrc;
 		struct hc_rect *r;
 		int rc;
 
@@ -511,6 +501,11 @@ clock_gettime(CLOCK_REALTIME, &ts);
 			return (-1);
 		}
 
+		if (nd_imggrayscale(&imggray) < 0) {
+			fprintf(stderr, nd_geterrormessage());
+			return (-1);
+		}
+		
 		if (nd_imgscalebilinear(&imggray, (double) IMGWIDTH / img->w,
 			(double) IMGWIDTH / img->w , &imgmini) < 0) {
 			fprintf(stderr, nd_geterrormessage());
@@ -522,205 +517,115 @@ clock_gettime(CLOCK_REALTIME, &ts);
 			return (-1);
 		}
 
-		if (bg_putimgtocontext(&ctx, &imgtr, &fgr, &fgrc) < 0)
-			return (-1);
-	
-		int x, y;
-		for (y = 0; y < drawimg->h; ++y)
-			for (x = 0; x < drawimg->w; ++x) {
-				double *pix;
-			
-				pix = drawimg->data + (y * drawimg->w + x) * 3;
-				memcpy(pix, imgtr.data + (y * drawimg->w + x) * 3,
-					sizeof(double) * 3);
+/*
+static int imgn = 0;
+char a[255];
+sprintf(a, "res1/%d.png", imgn++);
+nd_imgwrite(&imgtr, a);
+*/
 
-			}
-
-		if (nd_psunlock(1) < 0) {
+		if (hc_imgpyramidscan(&(hcd.hc), &imgtr, &r, &rc,
+			&(hcd.scanconf)) < 0) {
 			fprintf(stderr, nd_geterrormessage());
 			return (-1);
 		}
-		
-		if (fgrc == 0) {
 
-			clock_gettime(CLOCK_REALTIME, &te);
-			printf("%lf\n", (te.tv_sec - ts.tv_sec) + (te.tv_nsec - ts.tv_nsec) * 1e-9);
-					
-			nd_imgdestroy(&imggray);
-			nd_imgdestroy(&imgmini);
-			nd_imgdestroy(&imgtr);
-			continue;
-		}
-		
-		int i;
-		for (i = 0; i < fgrc; ++i) {
-			double *pix;
-			int x0, y0, x1, y1;
-			int xx, yy;
-			
-			y0 = drawimg->h * fgr[i].y0 / ctx.bgm.h;
-			y1 = drawimg->h * fgr[i].y1 / ctx.bgm.h;
-
-			x0 = drawimg->w * fgr[i].x0 / ctx.bgm.w;
-			x1 = drawimg->w * fgr[i].x1 / ctx.bgm.w;
-	
-			for (xx = x0; xx < x1; ++xx) {
-				pix = drawimg->data + (y0 * drawimg->w + xx) * 3;
-				
-				pix[0] = 0.0;
-				pix[1] = 1.0;
-				pix[2] = 0.0;
-				
-				pix = drawimg->data + ((y1 - 1) * drawimg->w + xx) * 3;
-			
-				pix[0] = 0.0;
-				pix[1] = 1.0;
-				pix[2] = 0.0;
-			}
-
-			for (yy = y0; yy < y1; ++yy) {
-				pix = drawimg->data + (yy * drawimg->w + x0) * 3;
-			
-				pix[0] = 0.0;
-				pix[1] = 1.0;
-				pix[2] = 0.0;
-			
-				pix = drawimg->data + (yy * drawimg->w + (x1 - 1)) * 3;
-			
-				pix[0] = 0.0;
-				pix[1] = 1.0;
-				pix[2] = 0.0;
-
-			}
-		}
-
-		for (i = 0; i < fgrc; ++i) {
-			struct nd_image imgcropped;
-
-			if (nd_imgcreate(&imgcropped, fgr[i].x1 - fgr[i].x0,
-				fgr[i].y1 - fgr[i].y0, ND_PF_RGB) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-
-			nd_imgcrop(&imgtr, fgr[i].x0, fgr[i].y0,
-				fgr[i].x1 - fgr[i].x0, fgr[i].y1 - fgr[i].y0,
-				&imgcropped);
-
-
-			if (nd_imggrayscale(&imgcropped) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-
-			if (hc_imgpyramidscan(&(hcd.hc), &imgcropped, &r, &rc,
-				&(hcd.scanconf)) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-				
-			for (rn = 0; rn < rc; ++rn) {
-				struct nd_image imgnum;
-				struct nd_matrix3 borderpersp;
-				struct nd_image imghsv;
-				double inpoints[8];
-				double outpoints[8];
-					
-				printf("Detected.\n");
-
-				r[rn].x0 += fgr[i].x0;
-				r[rn].y0 += fgr[i].y0;
-				r[rn].x1 += fgr[i].x0;
-				r[rn].y1 += fgr[i].y0;
-
-				if (rectgetorignum(img, r + rn, &perspmat,
-					(double) img->w / IMGWIDTH, &imgnum) < 0)
-					return (-1);
-
-
-				nd_imgcopy(&imgnum, &imghsv);
-
-				if (nd_imghsvval(&imghsv) < 0) {
-					fprintf(stderr, nd_geterrormessage());
-					return (-1);
-				}
-
-				if (ed_findborder(&imghsv, inpoints) < 0)
-					continue;
-
-				outpoints[0] = 0.0;
-				outpoints[1] = 0.0;
-				outpoints[2] = imgnum.w;
-				outpoints[3] = 0.0;
-				outpoints[4] = imgnum.w;
-				outpoints[5] = imgnum.h;
-				outpoints[6] = 0.0;
-				outpoints[7] = imgnum.h;
-
-				if (nd_getpersptransform(inpoints, outpoints,
-					&borderpersp) < 0) {
-					fprintf(stderr, nd_geterrormessage());
-					return (-1);
-				}
-
-				char imgpath[1024];	
-				static int foundn = 0;	
-				sprintf(imgpath, "%s/%d(before persp).png", outputdir,
-					foundn);
-				nd_imgwrite(&imgnum, imgpath);
-
-
-				if (nd_imgapplytransform(&imgnum, &borderpersp,
-					&imgnum) < 0) {
-					fprintf(stderr, nd_geterrormessage());
-					return (-1);
-				}
-
-				//char imgpath[1024];	
-				//static int foundn = 0;	
-				if (sprintf(imgpath, "%s/%d_%d.png", outputdir,
-					foundn++, rn)
-					< 0) {
-					fprintf(stderr, "sprintf: %s.\n",
-						strerror(errno));
-					return (-1);
-				}
-
-				nd_imgwrite(&imgnum, imgpath);
-
-
-
-				sprintf(imgpath, "%s/%d(orig).png", outputdir,
-					foundn - 1);
-				nd_imgwrite(&imggray, imgpath);
-
-
-
-				sprintf(imgpath, "%s/%d(transformed).png", outputdir,
-					foundn - 1);
-				nd_imgwrite(&imgtr, imgpath);
-			}
-
-			if (rc)
-				free(r);
-
-		
-		
-		
-		
-			nd_imgdestroy(&imgcropped);
-		}
-
-		free(fgr);
 
 
 clock_gettime(CLOCK_REALTIME, &te);
 printf("%lf\n", (te.tv_sec - ts.tv_sec) + (te.tv_nsec - ts.tv_nsec) * 1e-9);
+		
+
+		for (rn = 0; rn < rc; ++rn) {
+			struct nd_image imgnum;
+			struct nd_matrix3 borderpersp;
+			struct nd_image imghsv;
+			double inpoints[8];
+			double outpoints[8];
+				
+			printf("Detected.\n");
+
+			if (rectgetorignum(img, r + rn, &perspmat,
+				(double) img->w / IMGWIDTH, &imgnum) < 0)
+				return (-1);
+
+
+			nd_imgcopy(&imgnum, &imghsv);
+
+			if (nd_imghsvval(&imghsv) < 0) {
+				fprintf(stderr, nd_geterrormessage());
+				return (-1);
+			}
+
+			if (ed_findborder(&imghsv, inpoints) < 0)
+				continue;
+
+			outpoints[0] = 0.0;
+			outpoints[1] = 0.0;
+			outpoints[2] = imgnum.w;
+			outpoints[3] = 0.0;
+			outpoints[4] = imgnum.w;
+			outpoints[5] = imgnum.h;
+			outpoints[6] = 0.0;
+			outpoints[7] = imgnum.h;
+
+			if (nd_getpersptransform(inpoints, outpoints,
+				&borderpersp) < 0) {
+				fprintf(stderr, nd_geterrormessage());
+				return (-1);
+			}
+
+			char imgpath[1024];	
+			static int foundn = 0;	
+			sprintf(imgpath, "%s/%d(before persp).png", outputdir,
+				foundn);
+			nd_imgwrite(&imgnum, imgpath);
+
+
+			if (nd_imgapplytransform(&imgnum, &borderpersp,
+				&imgnum) < 0) {
+				fprintf(stderr, nd_geterrormessage());
+				return (-1);
+			}
+
+			//char imgpath[1024];	
+			//static int foundn = 0;	
+			if (sprintf(imgpath, "%s/%d_%d.png", outputdir,
+				foundn++, rn)
+				< 0) {
+				fprintf(stderr, "sprintf: %s.\n",
+					strerror(errno));
+				return (-1);
+			}
+
+			nd_imgwrite(&imgnum, imgpath);
+
+
+
+			sprintf(imgpath, "%s/%d(orig).png", outputdir,
+				foundn - 1);
+			nd_imgwrite(&imggray, imgpath);
+
+
+
+			sprintf(imgpath, "%s/%d(transformed).png", outputdir,
+				foundn - 1);
+			nd_imgwrite(&imgtr, imgpath);
+
+
+		}
+
+		if (rc)
+			free(r);
 
 		nd_imgdestroy(&imggray);
 		nd_imgdestroy(&imgmini);
 		nd_imgdestroy(&imgtr);
 
+		if (nd_psunlock(1) < 0) {
+			fprintf(stderr, nd_geterrormessage());
+			return (-1);
+		}
 	}
 
 	fprintf(stderr, "Unexpexted loop quit\n");
@@ -773,20 +678,10 @@ int rgbdatatoimg(uint8_t *rgbdata, int rgblinesize, struct nd_image *img)
 	return 0;
 }
 
-/*
 struct decodedata {
 	struct avdata *av;
 	struct nd_image *img;
 	struct playbackstate *pbs;
-};
-*/
-
-struct decodedata {
-	struct avdata *av;
-	struct nd_image *img;
-	struct playbackstate *pbs;
-	struct nd_image *drawimg;
-	struct xdata *guidata;
 };
 
 int decode(void *userdata)
@@ -832,7 +727,6 @@ int decode(void *userdata)
 	return 0;
 }
 
-/*
 int decodeloop(struct avdata *av, struct nd_image *img)
 {
 	struct playbackstate pbs;
@@ -849,10 +743,10 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 		int retval;
 
 		isdecoded = 0;
-
-// struct timespec ts, te;
-// clock_gettime(CLOCK_REALTIME, &ts);
-
+/*
+struct timespec ts, te;
+clock_gettime(CLOCK_REALTIME, &ts);
+*/
 		do {
 			if ((retval = readframe(av->s, av->vcodecc,
 				av->vstreamid, av->frame,
@@ -862,10 +756,10 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 			if (retval > 0)
 				return 0;
 		} while (!isdecoded);
-
-// clock_gettime(CLOCK_REALTIME, &te);
-// printf("%lf\n", (te.tv_sec - ts.tv_sec) + (te.tv_nsec - ts.tv_nsec) * 1e-9);
-
+/*
+clock_gettime(CLOCK_REALTIME, &te);
+printf("%lf\n", (te.tv_sec - ts.tv_sec) + (te.tv_nsec - ts.tv_nsec) * 1e-9);
+*/
 		if (frametorgb(av->frame, img->w, img->h,
 			&rgbdata, &rgblinesize) < 0)
 			return (-1);
@@ -888,85 +782,17 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 	fprintf(stderr, "Unexpexted loop quit\n");
 	return (-1);
 }
-*/
-
-int draw(cairo_surface_t *sur, void *userdata)
-{
-	struct decodedata *ddata;
-	unsigned char *surdata;
-	int surw, surh;
-	int i, j;
-
-	ddata = userdata;
-
-	surw = cairo_image_surface_get_width(sur);
-	surh = cairo_image_surface_get_height(sur);
-	surdata = cairo_image_surface_get_data(sur);
-	
-	for (i = 0; i < ddata->drawimg->h; ++i) {
-		unsigned char *inputline;
-		double *outputline;
-
-		inputline = surdata + i * surw * 4;
-		outputline = ddata->drawimg->data + i * ddata->drawimg->w * 3;
-		
-		for (j = 0; j < ddata->drawimg->w; ++j) {
-			inputline[j * 4 + 0] = 255.0 * (outputline[j * 3 + 0]);
-			inputline[j * 4 + 1] = 255.0 * (outputline[j * 3 + 1]);
-			inputline[j * 4 + 2] = 255.0 * (outputline[j * 3 + 2]);
-			inputline[j * 4 + 3] = 255;
-		}
-	}
-
-	return 0;
-}
-
-int decodeloop(struct avdata *av, struct nd_image *img)
-{
-	struct xdata guidata;
-	struct decodedata ddata;
-	struct playbackstate pbs;
-	AVRational tmpr;
-
-	tmpr = av->s->streams[av->vstreamid]->avg_frame_rate;
-	if (pbstateinit(&pbs, (double) tmpr.num / tmpr.den) < 0)
-		return 1;
-
-	initgui(&guidata, drawimg->w, drawimg->h);
-
-	ddata.av = av;
-	ddata.img = img;
-	ddata.pbs = &pbs;
-	ddata.drawimg = drawimg;
-	ddata.guidata = &guidata;
-
-	guidata.defaultcallback = decode;
-	guidata.drawcallback = draw;
-	guidata.keypresscallback = NULL;
-	guidata.motioncallback = NULL;
-	guidata.buttonpresscallback = NULL;
-	guidata.buttonreleasecallback = NULL;
-	
-	mainloop(&guidata, &ddata);
-
-	fprintf(stderr, "Unexpexted loop quit\n");
-	return (-1);
-}
 
 int main(int argc, char **argv)
 {
 	int chpid;
 	struct avdata av;
 	struct nd_image *img;
-	
+
 	if (initavdata(&av, argv[1]) < 0)
 		return 1;
 	
 	if (imgcreateshared(&img, av.vcodecc->width, av.vcodecc->height,
-		ND_PF_RGB) < 0)
-		return 1;
-
-	if (imgcreateshared(&drawimg, IMGWIDTH, img->h * IMGWIDTH / img->w,
 		ND_PF_RGB) < 0)
 		return 1;
 

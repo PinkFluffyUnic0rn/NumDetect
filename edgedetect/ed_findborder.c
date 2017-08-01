@@ -11,8 +11,10 @@
 #include <gtk/gtk.h>
 #include <cairo.h>
 
-#define HOUGHMAXLINES 100
+#define MAXLINES 10
 #define MAXANGDIF 1.0 * M_PI / 180.0
+#define VBANDLEN 0.125
+#define THETAMINVAL 0.001
 
 enum LINEORIENTATION {
 	LO_TOP,
@@ -101,7 +103,6 @@ static double bandsum(struct nd_image *img,
 			parg = atan2((double) y, (double) x);
 			pabs = sqrt(pow(x, 2.0) + pow(y, 2.0));
 
-	
 			prho = pabs * cos(parg - theta);
 		
 			if (prho > rho0 && prho < rho1)
@@ -111,7 +112,7 @@ static double bandsum(struct nd_image *img,
 	return s;
 }
 
-static int checkline(struct nd_image *img, double rho, double theta,
+static int checkline(struct nd_image *img, double theta, double rho,
 	enum LINEORIENTATION lo)
 {	
 	if ((lo == LO_TOP || lo == LO_BOTTOM)
@@ -120,35 +121,22 @@ static int checkline(struct nd_image *img, double rho, double theta,
 
 	if ((lo == LO_LEFT || lo == LO_RIGHT)
 		&& !(theta > M_PI * 0.25 && theta < M_PI * 0.75)) {	
-/*
-		double vbandlen;
-		double sumborder;
-		double suminner;
-
-		vbandlen = img->w * 0.025 * ((lo == LO_LEFT) ? 1.0 : -1.0);
-
-		sumborder = bandsum(img, rho - 0.01,
-			rho + vbandlen * 1.0 + 0.01, theta);
-			
-		suminner = bandsum(img, rho + vbandlen * 1.0 - 0.01,
-			rho + vbandlen * 2.0 + 0.01, theta);
-
-		return (sumborder > suminner) ? 1 : 0;
-*/
-		double vbandlen = img->w * 0.125;
+		double sumborder, suml, sumr;
+		double ivbandlen;
 		double valdif;
-		double sumborder;
-		double suml;
-		double sumr;
 
-		suml = bandsum(img, rho - vbandlen * 1.5 - 0.01,
-			rho - vbandlen * 0.5 + 0.01, theta);
+//		return 1;
+
+		ivbandlen = img->w * VBANDLEN;
 		
-		sumr = bandsum(img, rho + vbandlen * 0.5 - 0.01,
-			rho + vbandlen * 1.5 + 0.01, theta);
+		suml = bandsum(img, rho - ivbandlen * 1.5 - 0.01,
+			rho - ivbandlen * 0.5 + 0.01, theta);
 		
-		sumborder = bandsum(img, rho - vbandlen * 0.5 - 0.01,
-			rho + vbandlen * 0.5 + 0.01, theta);
+		sumr = bandsum(img, rho + ivbandlen * 0.5 - 0.01,
+			rho + ivbandlen * 1.5 + 0.01, theta);
+		
+		sumborder = bandsum(img, rho - ivbandlen * 0.5 - 0.01,
+			rho + ivbandlen * 0.5 + 0.01, theta);
 
 		valdif = ((lo == LO_LEFT) ? sumr : suml) - sumborder;
 
@@ -161,6 +149,24 @@ static int checkline(struct nd_image *img, double rho, double theta,
 	return 0;
 }
 
+static int printmask(int *mask, int w, int h, const char *path)
+{
+	struct nd_image img;
+	int x, y;
+
+	nd_imgcreate(&img, w, h, ND_PF_GRAYSCALE);
+
+	for (y = 0; y < h; ++y)
+		for (x = 0; x < w; ++x)
+			img.data[y * w + x] = mask[y * w + x] ? 255 : 0;
+
+	nd_imgwrite(&img, path);
+
+	nd_imgdestroy(&img);
+
+	return 0;
+}
+
 static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	enum LINEORIENTATION lineorient)
 {
@@ -169,28 +175,9 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	int maxlinescount;
 	int linen;
 
-
-	/*
-	if (lineorient == LO_LEFT || lineorient == LO_RIGHT)
-		if (ed_removelowfreq(img, 0.0, 0.0) < 0)
-			return (-1);
-
-	if (lineorient == LO_TOP || lineorient == LO_BOTTOM)
-		if (ed_removelowfreq(img, 0.0, 0.0) < 0)
-			return (-1);
-*/
-
 	if (nd_imgnormalize(img, 1, 1) < 0)
 		return (-1);
 
-/*
-	int i, j;
-	for (i = 0; i < img->h; ++i)
-		for (j = 0; j < img->w; ++j)
-			if (!(img->data[i * img->w + j] > 0.0))
-				printf("%lf\n", img->data[i * img->w + j]);
-
-*/
 	if ((mask = malloc(sizeof(int) * img->w * img->h)) == NULL) {
 		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
@@ -199,15 +186,38 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	if (ed_canny(img, mask, -1.0, -1.0) < 0)
 		return (-1);
 
-	if ((hlines = malloc(sizeof(double) * HOUGHMAXLINES * 2)) == NULL) {
+////////////////////////////////////////////////
+	const char *path;
+
+	switch(lineorient) {
+	case LO_TOP:
+		path = "top.png";
+		break;
+	case LO_BOTTOM:
+		path = "bot.png";
+		break;
+	case LO_LEFT:
+		path = "left.png";
+		break;
+	case LO_RIGHT:
+		path = "right.png";
+		break;
+
+	}
+
+	printmask(mask, img->w, img->h, path);
+////////////////////////////////////////////////
+
+
+	if ((hlines = malloc(sizeof(double) * (*linescount) * 2)) == NULL) {
 		safefree((void **)&mask);
 
 		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
-	
-	if (ed_hough(mask, img->w, img->h,
-		M_PI / 180.0, hlines, HOUGHMAXLINES) < 0) {
+
+	if (ed_hough(mask, img->w, img->h, M_PI / 180.0, hlines, (*linescount))
+		< 0) {
 		safefree((void **)&mask);
 		safefree((void **)&lines);
 		
@@ -215,23 +225,22 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	}
 
 	maxlinescount = *linescount;
-
+	
 	*linescount = 0;
-	for (linen = 0; linen < HOUGHMAXLINES && *linescount < maxlinescount;
-		++linen) {
+	for (linen = 0; linen < maxlinescount; ++linen) {
 		double rho, theta;
 	
 		theta = hlines[linen * 2];
 		rho = hlines[linen * 2 + 1];
 		
-		if (checkline(img, rho, theta, lineorient)) {
+		if (checkline(img, theta, rho, lineorient)) {
 			lines[*linescount * 2] = theta;
 			lines[*linescount * 2 + 1] = rho;
 		
 			++(*linescount);
 		}
 	}
-
+	
 	safefree((void **)&mask);
 	safefree((void **)&hlines);
 
@@ -323,28 +332,36 @@ static int getparallel(double *lines1, int lines1count, double *lines2,
 	return 1;
 }
 
+int linetoseg(double theta, double rho, int imgw, int imgh,
+	struct lineseg *lseg)
+{
+	if (theta < THETAMINVAL) {	
+		lseg->x0 = rho;
+		lseg->y0 = 0.0;
+		lseg->x1 = rho;
+		lseg->y1 = (double) imgh;
+	}
+	else {		
+		lseg->x0 = 0.0;
+		lseg->y0 = rho / sin(theta);
+		lseg->x1 = (double) imgw;
+		lseg->y1 = (rho - imgw * cos(theta)) / sin(theta);
+	}
+
+	return 0;
+}
+
 int ed_findborder(struct nd_image *img, double inpoints[8])
 {
 	struct nd_image *imgparts;
-	double *linestop;
-	double *linesbot;
-	double *linesleft;
-	double *linesright;
+	double *lines0;
+	double *lines1;
 	int linescount;
-	struct lineseg ltop;
-	struct lineseg lbot;
-	struct lineseg lleft;
-	struct lineseg lright;
+	struct lineseg ltop, lbot;
+	struct lineseg lleft, lright;
 	int li1, li2;
-	double rho, theta;
 
 	assert(img != NULL && inpoints != NULL);
-/*
-	ed_removelowfreq(&img, 0.05, 0.0);
-
-	nd_imgwrite("test.png", &img);
-	exit(1);
-*/
 
 // split image into two parts by a horizontal axis
 	if ((imgparts = malloc(sizeof(struct nd_image) * 2)) == NULL)
@@ -353,47 +370,32 @@ int ed_findborder(struct nd_image *img, double inpoints[8])
 	if (imghsplit(img, imgparts, 2) < 0)
 		return (-1);
 
-	linescount = 100;
-	linestop = malloc(sizeof(double) * 2 * linescount);
-	linesbot = malloc(sizeof(double) * 2 * linescount);
+	if ((lines0 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
+		return (-1);
 
-	imgfindlines(imgparts + 0, linestop, &linescount, LO_TOP);
-	imgfindlines(imgparts + 1, linesbot, &linescount, LO_BOTTOM);
+	if ((lines1 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
+		return (-1);
 
 	li1 = li2 = 0;
-	getparallel(linestop, linescount, linesbot, linescount, &li1, &li2);
-
-	theta = linestop[li1 * 2];
-	rho = linestop[li1 * 2 + 1];
 	
-	if (theta < 0.00001) {	
-		ltop.x0 = rho;
-		ltop.y0 = 0.0;
-		ltop.x1 = rho;
-		ltop.y1 = (double) img->h;
-	}
-	else {		
-		ltop.x0 = 0.0;
-		ltop.y0 = rho / sin(theta);
-		ltop.x1 = img->w;
-		ltop.y1 = (rho - img->w * cos(theta)) / sin(theta);
-	}
+	linescount = MAXLINES;
+	if (imgfindlines(imgparts + 0, lines0, &linescount, LO_TOP) < 0)
+		return (-1);
 
-	theta = linesbot[li2 * 2];
-	rho = linesbot[li2 * 2 + 1];
+	if (linescount == 0)
+		return (-1);
 
-	if (theta < 0.00001) {	
-		lbot.x0 = rho;
-		lbot.y0 = 0.0;
-		lbot.x1 = rho;
-		lbot.y1 = img->h;
-	}
-	else {
-		lbot.x0 = 0.0;
-		lbot.y0 = rho / sin(theta);
-		lbot.x1 = img->w;
-		lbot.y1 = (rho - img->w * cos(theta)) / sin(theta);
-	}
+	linescount = MAXLINES;
+	if (imgfindlines(imgparts + 1, lines1, &linescount, LO_BOTTOM) < 0)
+		return (-1);
+
+	if (linescount == 0)
+		return (-1);
+
+	getparallel(lines0, linescount, lines1, linescount, &li1, &li2);
+
+	linetoseg(lines0[li1 * 2], lines0[li1 * 2 + 1], img->w, img->h, &ltop);
+	linetoseg(lines1[li2 * 2], lines1[li2 * 2 + 1], img->w, img->h, &lbot);
 
 	lbot.y0 += img->h / 2;
 	lbot.y1 += img->h / 2;
@@ -407,54 +409,26 @@ int ed_findborder(struct nd_image *img, double inpoints[8])
 	if (imgvsplit(img, imgparts, 5) < 0)
 		return (-1);
 
-	linescount = 100;
-	
-	if ((linesleft = malloc(sizeof(double) * 2 * linescount)) == NULL) {
-		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+	linescount = MAXLINES;
+	if (imgfindlines(imgparts + 0, lines0, &linescount, LO_LEFT) < 0)
 		return (-1);
-	}
 
-	if ((linesright = malloc(sizeof(double) * 2 * linescount)) == NULL) {
-		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+	if (linescount == 0)
 		return (-1);
-	}
 
-	imgfindlines(imgparts + 0, linesleft, &linescount, LO_LEFT);
-	imgfindlines(imgparts + 4, linesright, &linescount, LO_RIGHT);
+	linescount = MAXLINES;
+	if (imgfindlines(imgparts + 4, lines1, &linescount, LO_RIGHT) < 0)
+		return (-1);
 	
-	getparallel(linesleft, linescount, linesright, linescount, &li1, &li2);
+	if (linescount == 0)
+		return (-1);
 
-	theta = linesleft[li1 * 2];
-	rho = linesleft[li1 * 2 + 1];
+	getparallel(lines0, linescount, lines1, linescount, &li1, &li2);
 
-	if (theta < 0.00001) {	
-		lleft.x0 = rho;
-		lleft.y0 = 0.0;
-		lleft.x1 = rho;
-		lleft.y1 = (double) img->h;
-	}
-	else {		
-		lleft.x0 = 0.0;
-		lleft.y0 = rho / sin(theta);
-		lleft.x1 = img->w;
-		lleft.y1 = (rho - img->w * cos(theta)) / sin(theta);
-	}
-
-	theta = linesright[li2 * 2];
-	rho = linesright[li2 * 2 + 1];
-
-	if (theta < 0.00001) {	
-		lright.x0 = rho;
-		lright.y0 = 0.0;
-		lright.x1 = rho;
-		lright.y1 = img->h;
-	}
-	else {
-		lright.x0 = 0.0;
-		lright.y0 = rho / sin(theta);
-		lright.x1 = img->w;
-		lright.y1 = (rho - img->w * cos(theta)) / sin(theta);
-	}
+	linetoseg(lines0[li1 * 2], lines0[li1 * 2 + 1],
+		img->w, img->h, &lleft);
+	linetoseg(lines1[li2 * 2], lines1[li2 * 2 + 1],
+		img->w, img->h, &lright);
 	
 	lright.x0 += 4 * img->w / 5;
 	lright.x1 += 4 * img->w / 5;

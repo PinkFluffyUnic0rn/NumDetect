@@ -28,7 +28,7 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 	
-	if (hc_buildcascade(&hc, &ts, 0.5, 0.97) < 0) {
+	if (hc_buildcascade(&hc, &ts, 0.8, 0.97) < 0) {
 		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}

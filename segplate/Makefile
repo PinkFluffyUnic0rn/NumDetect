@@ -1,17 +1,29 @@
-CC=gcc
-SRC=numseg.c
-NNSRC=../neuronet/nn_neuronet.c
-HCSRC=../haarcascade/hc_hcascade.c ../haarcascade/hc_rect.c
-UTILSRC=../utility/nd_error.c ../utility/nd_image.c ../utility/nd_vecmat.c\
-../utility/nd_procsync.c
-OPT=-Wall
-LIB=-lavcodec -lavutil -lavformat -lswscale -pthread -lm \
-`pkg-config --cflags --libs gtk+-3.0`
-BIN=numseg
-NNINC=../neuronet
-HCINC=../haarcascade
-UTILINC=../utility
+CC = gcc
 
-all:
-	$(CC) $(SRC) $(NNSRC) $(HCSRC) $(UTILSRC) \
-	 -I$(NNINC) -I$(HCINC) -I$(UTILINC) -o $(BIN) $(OPT) $(LIB) 
+UTILINC = ../utility
+HCINC =../haarcascade
+NNINC =../neuronet
+
+UTILOBJ = $(UTILINC)/nd_error.o $(UTILINC)/nd_image.o $(UTILINC)/nd_vecmat.o
+HCOBJ= $(HCINC)/hc_hcascade.o $(HCINC)/hc_rect.o
+NNOBJ= $(NNINC)/nn_neuronet.o
+NUMSEGOBJ= $(UTILOBJ) $(HCOBJ) $(NNOBJ) numseg.o
+
+NUMSEGBIN = ../bin/numseg
+
+LIB = `pkg-config --cflags --libs gtk+-3.0` -lm
+INC = -I$(UTILINC) -I$(HCINC) -I$(NNINC)
+CFLAGS = $(INC) -Wall $(LIB)
+
+all : $(NUMSEGBIN)
+
+$(NUMSEGBIN) : $(NUMSEGOBJ)
+	$(CC) -o $@ $^ $(CFLAGS)
+
+%.o : %.c $(INC)/*.h
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+.PHONY : clean
+
+clean :
+	rm -f $(NUMSEGOBJ) 

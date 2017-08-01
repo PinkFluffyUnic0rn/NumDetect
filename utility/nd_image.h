@@ -35,6 +35,8 @@ int nd_imghsvval(struct nd_image *img);
 
 int nd_imggrayscale(struct nd_image *img);
 
+int nd_histequalization(struct nd_image *img, int histsize);
+
 int nd_imgnormalize(struct nd_image *img, int avr, int dev);
 
 int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
@@ -49,6 +51,6 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 int nd_getpersptransform(double *inpoints, double *outpoints,
 	struct nd_matrix3 *mr);
 
-int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m);
-
+int nd_imgapplytransform(struct nd_image *imgin, const struct nd_matrix3 *m,
+	struct nd_image *imgout);
 #endif

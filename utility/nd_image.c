@@ -287,6 +287,114 @@ int nd_imggrayscale(struct nd_image *img)
 	return 0;
 }
 
+static double imgmaxval(double *pix, int imgsize)
+{
+	double maxval;
+	int pixn;
+
+	maxval = pix[0];
+	for (pixn = 1; pixn < imgsize; ++pixn) {
+		double val;
+
+		val = pix[pixn];
+		maxval = (val > maxval) ? val : maxval;
+	}
+
+	return maxval;
+}
+
+static int buildhist(int **hist, int histsize,
+	double *pix, int imgsize, double maxval)
+{
+	double rel;
+	int pixn;
+
+	if (((*hist) = calloc(histsize, sizeof(int))) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		return (-1);
+	}
+
+	rel = (double) (histsize - 1) / maxval;
+	
+	for (pixn = 1; pixn < imgsize; ++pixn) {
+		int histel;
+
+		histel = (int) ceil(pix[pixn] * rel);
+
+// !!!
+		if (histel < 0 || histel >= histsize)
+			continue;
+//
+	
+		++((*hist)[histel]);
+	}
+
+	return 0;
+}
+
+/*
+static int histwrite(int *hist, int histsize, double histscale,
+	int imghisth, const char *path)
+{
+	int x, y;
+	
+	struct nd_image imghist;
+	
+	if (nd_imgcreate(&imghist, histsize, imghisth, ND_PF_GRAYSCALE) < 0)
+		return (-1);
+
+	for (y = 0; y < imghisth; ++y)
+		for (x = 0; x < histsize; ++x) 
+			imghist.data[y * histsize + x]
+				= ((imghisth - y) < hist[x] * histscale)
+				? 1.0 : 0.0;
+
+	if (nd_imgwrite(&imghist, path) < 0)
+		return (-1);
+
+	return 0;
+}
+*/
+
+int nd_histequalization(struct nd_image *img, int histsize)
+{
+	int *hist;
+	double maxval;
+	double *newval;
+	int i;
+
+	maxval = imgmaxval(img->data, img->w * img->h);
+
+	if (buildhist(&hist, histsize, img->data, img->w * img->h, maxval) < 0)
+		return (-1);
+
+	if ((newval = malloc(sizeof(double) * histsize)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		return (-1);
+	}
+
+	newval[0] = hist[0] / (double) (img->w * img->h);
+	for (i = 1; i < histsize; ++i)
+		newval[i] = newval[i - 1] + hist[i]
+		/ (double) (img->w * img->h);
+
+	for (i = 0; i < img->h * img->w; ++i) {
+		int histel;
+
+		histel = (int) ceil(img->data[i] / maxval * (histsize - 1));
+
+		if (histel < 0 || histel >= histsize)
+			continue;
+
+		img->data[i] = newval[histel];
+	}
+
+	return 0;
+}
+
+
+
+
 int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 {
 	int npix;
@@ -324,9 +432,17 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 			img->data[npix] -= avr;
 	}
 
-	if (normdev)
+	if (normdev) {
+		if (fabs(sd) < 0.00001) {
+			nd_seterrormessage(
+				"Standard deviation is close to zero",
+				__func__);
+			return (-1);
+		}
+
 		for (npix = 0; npix < pixcount; ++npix)
 			img->data[npix] /= sd;
+	}
 
 	return 0;
 }
@@ -336,12 +452,12 @@ int nd_imgcrop(const struct nd_image *imgin, int x0, int y0, int w, int h,
 {
 	int y;
 
-	assert(imgin != NULL
-		&& x0 >= 0 && x0 < imgin->w 
+	assert(imgin != NULL);
+	assert(x0 >= 0 && x0 < imgin->w 
 		&& y0 >= 0 && y0 < imgin->h
-		&& w > 0 && h > 0
-		&& x0 + w <= imgin->w && y0 + h <= imgin->h
-		&& imgout != NULL
+		&& w > 0 && h > 0);
+	assert(x0 + w <= imgin->w && y0 + h <= imgin->h);
+	assert(imgout != NULL
 		&& imgout->w >= w
 		&& imgout->h >= h
 		&& imgout->format == imgin->format);
@@ -596,25 +712,26 @@ int nd_getpersptransform(double *inpoints, double *outpoints,
 	return 0;
 }
 
-int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
+int nd_imgapplytransform(struct nd_image *imgin, const struct nd_matrix3 *m,
+	struct nd_image *imgout)
 {
 	int x, y;
 	double *newdata;
 
-	assert(img != NULL && m != NULL);
+	assert(imgin != NULL && m != NULL && imgout);
 
-	assert(nd_imgisvalid(img)
-		&& (img->format == ND_PF_GRAYSCALE
-		|| img->format == ND_PF_RGB));
+	assert(nd_imgisvalid(imgin)
+		&& (imgin->format == ND_PF_GRAYSCALE
+		|| imgin->format == ND_PF_RGB));
 
-	if ((newdata = malloc(sizeof(double) * img->w * img->h
-		* nd_imgchanscount(img->format))) == NULL) {
+	if ((newdata = malloc(sizeof(double) * imgin->w * imgin->h
+		* nd_imgchanscount(imgin->format))) == NULL) {
 		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
 
-	for (y = 0; y < img->h; ++y)
-		for (x = 0; x < img->w; ++x) {
+	for (y = 0; y < imgin->h; ++y)
+		for (x = 0; x < imgin->w; ++x) {
 			struct nd_vector3 v;
 			double inx, iny;
 			int c;
@@ -628,20 +745,26 @@ int nd_imgapplytransform(struct nd_image *img, const struct nd_matrix3 *m)
 			inx = v.x / v.z;
 			iny = v.y / v.z;
 
-			for (c = 0; c < nd_imgchanscount(img->format); ++c) {
-				newdata[(y * img->w + x)
-					* nd_imgchanscount(img->format) + c]
-					= (iny >= 0 && iny < img->h
-					&& inx >= 0 && inx < img->w)
-					? nd_linearinterp(img, inx, iny, c)
+			for (c = 0; c < nd_imgchanscount(imgin->format); ++c) {
+				newdata[(y * imgin->w + x)
+					* nd_imgchanscount(imgin->format) + c]
+					= (iny >= 0 && iny < imgin->h
+					&& inx >= 0 && inx < imgin->w)
+					? nd_linearinterp(imgin, inx, iny, c)
 					: 0.0;
 
 			}
 		}
-
-	memcpy(img->data, newdata, sizeof(double) * img->w * img->h
-		* nd_imgchanscount(img->format));
-	free(newdata);
+	if (imgin != imgout) {
+		memmove(imgout, imgin, sizeof(struct nd_image));
+		imgout->data = newdata;
+	}
+	else {
+		memcpy(imgout->data, newdata, sizeof(double) * imgin->w
+			* imgin->h * nd_imgchanscount(imgin->format));
+		
+		free(newdata);
+	}
 
 	return 0;
 }

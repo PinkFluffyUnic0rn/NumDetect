@@ -20,7 +20,7 @@ int nd_psinitprefork()
 		return (-1);
 	}
 	
-	if (nd_psunlock(0) < 0) {
+	if (nd_psunlock(1) < 0) {
 		nd_seterrormessage("pipe error", __func__);
 		return (-1);
 	}

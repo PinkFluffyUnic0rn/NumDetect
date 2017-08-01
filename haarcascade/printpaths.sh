@@ -5,5 +5,5 @@ for file in $1/*.png
 do 
 	((++filen))
 	
-	echo "$file"
+	echo $(pwd)/"$file"
 done

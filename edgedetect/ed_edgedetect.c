@@ -3,7 +3,8 @@
 
 #include "ed_edgedetect.h"
 #include "nd_error.h"
-#include "ed_fft.h"
+
+#define HISTSIZE 500
 
 struct houghline {
 	double ang;
@@ -138,85 +139,6 @@ int ed_gaussblur(struct nd_image *img, double sigma)
 	return 0;
 }
 
-int ed_removelowfreq(struct nd_image *img, double wthres, double hthres)
-{
-	struct complexd *c;
-	int fw, fh;
-	int x, y;
-	int wfrom, hfrom;
-
-	fw = 1;
-
-	while (fw < img->w)
-		fw *= 2;
-
-	fh = 1;
-
-	while(fh < img->h)
-		fh *= 2;
-
-	c = malloc(sizeof(struct complexd) * fw * fh);
-
-	for (y = 0; y < fh; ++y)
-		for (x = 0; x < fw; ++x) {
-			c[y * fw + x].real = (x < img->w && y < img->h) ?
-				img->data[y * img->w + x] : 0.0;
-			c[y * fw + x].imag = 0.0;
-		}
-
-	fft2d(c, fw, fh, 1);
-/*
-	char *a[] = {"1.png", "2.png", "3.png", "4.png"};
-	static int tmpi = 0;
-	struct nd_image test;
-
-	nd_imgcreate(&test, fw, fh, 1);
-
-	for (y = 0; y < fh; ++y)
-		for (x = 0; x < fw; ++x) {
-			test.data[y * fw + x]
-				= sqrt(pow(c[y * fw + x].imag, 2.0)
-				+ pow(c[y * fw + x].real, 2.0)) * 100.0;
-		}
-
-	nd_imgwrite(a[tmpi], &test);
-	nd_imgdestroy(&test);
-	++tmpi;
-*/
-	wfrom = fw / 2 * wthres;
-	hfrom = fh / 2 * hthres;
-
-	for (y = 0; y < hfrom; ++y)
-		for (x = 0; x < fw; ++x) {
-			c[y * fw + x].real = 0.0;
-			c[y * fw + x].imag = 0.0;
-			c[(fh - y - 1) * fw + x].real = 0.0;
-			c[(fh - y - 1) * fw + x].imag = 0.0;
-
-		}
-
-	for (y = 0; y < fh; ++y)
-		for (x = 0; x < wfrom; ++x) {
-			c[y * fw + x].real = 0.0;
-			c[y * fw + x].imag = 0.0;
-			c[y * fw + (fw - x - 1)].real = 0.0;
-			c[y * fw + (fw - x - 1)].imag = 0.0;
-		}
-
-
-
-	fft2d(c, fw, fh, -1);
-
-	for (y = 0; y < img->h; ++y)
-		for (x = 0; x < img->w; ++x) {
-			img->data[y * img->w + x] = c[y * fw + x].real;
-	}
-
-	free(c);
-
-	return 0;
-}
-
 static double imgconvophelp(struct nd_image *img,
 	double *op, int opw, int oph, int resposy, int resposx)
 {
@@ -236,9 +158,6 @@ static double imgconvophelp(struct nd_image *img,
 			res += img->data[(resposy - y)
 				* img->w + (resposx - x)] * op[x * opw + y];
 	}
-
-//	if (isnan(res))
-//		printf("HERE!\n");
 
 	return res;
 }
@@ -301,19 +220,10 @@ static int sobel(struct nd_image *img, double *gradval, double *graddir)
 	return 0;
 }
 
-static int otsu(double *pix, int imgsize, int histsize, double *thres)
+static double imgmaxval(double *pix, int imgsize)
 {
-	double rel;
 	double maxval;
-	int *hist;
 	int pixn;
-
-	int m, n;
-	int a1, b1;	
-	int t;
-
-	double maxsigma;
-	int thr;
 
 	maxval = pix[0];
 	for (pixn = 1; pixn < imgsize; ++pixn) {
@@ -323,37 +233,91 @@ static int otsu(double *pix, int imgsize, int histsize, double *thres)
 		maxval = (val > maxval) ? val : maxval;
 	}
 
-	rel = (double) histsize / maxval;
+	return maxval;
+}
 
-	if ((hist = calloc(histsize, sizeof(int))) == NULL) {
+static int buildhist(int **hist, int histsize,
+	double *pix, int imgsize, double maxval)
+{
+	double rel;
+	int pixn;
+
+	if (((*hist) = calloc(histsize, sizeof(int))) == NULL) {
 		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
+
+	rel = (double) (histsize - 1) / maxval;
 	
 	for (pixn = 1; pixn < imgsize; ++pixn) {
 		int histel;
 
-
 		histel = (int) ceil(pix[pixn] * rel);
+
+// !!!
+		if (histel < 0 || histel >= histsize)
+			continue;
+//
 	
-		++hist[histel];
-	
+		++((*hist)[histel]);
 	}
 
-	m = 0;
-	n = 0;
+	return 0;
+}
+
+static int histwrite(int *hist, int histsize, double histscale,
+	int imghisth, const char *path)
+{
+	int x, y;
+	
+	struct nd_image imghist;
+	
+	if (nd_imgcreate(&imghist, histsize, imghisth, ND_PF_GRAYSCALE) < 0)
+		return (-1);
+
+	for (y = 0; y < imghisth; ++y)
+		for (x = 0; x < histsize; ++x) 
+			imghist.data[y * histsize + x]
+				= ((imghisth - y) < hist[x] * histscale)
+				? 1.0 : 0.0;
+
+	if (nd_imgwrite(&imghist, path) < 0)
+		return (-1);
+
+	return 0;
+}
+
+static int otsu(double *pix, int imgsize, int histsize, double *thres)
+{
+	double maxval;
+	int *hist;
+
+	int m, n;
+	int a1, b1;	
+	int t;
+
+	double maxsigma;
+	int thr;
+
+	maxval = imgmaxval(pix, imgsize);
+
+	if (buildhist(&hist, histsize, pix, imgsize, maxval) < 0)
+		return (-1);
+
+	m = n = 0;
 
 	for (t = 0; t <= histsize; ++t) {
 		m += t * hist[t];
-		n += hist[t];
 	}
-
+	
+	n = imgsize;
+	
+	
 	maxsigma = -1.0;
 	thr = 0;
-	a1 = 0;
-	b1 = 0;
-
-	for (t = 0; t < histsize; ++t) {
+	a1 = b1 = 0;
+	
+	for (t = 0; t < histsize - 1; ++t) {
 		double w1;
 		double a;
 		double sigma;
@@ -361,10 +325,9 @@ static int otsu(double *pix, int imgsize, int histsize, double *thres)
 		a1 += t * hist[t];
 		b1 += hist[t];
 
-		w1 = (double) b1 / (double) n;
+		w1 = (double) b1 / n;
 
-		a = (double) a1 / (double) b1
-			- (double) (m - a1) / (double) (n - b1);
+		a = (double) a1 /  b1 - (m - a1) / (n - b1);
 	
 		sigma = w1 * (1 - w1) * a * a;
 
@@ -374,7 +337,9 @@ static int otsu(double *pix, int imgsize, int histsize, double *thres)
 		}
 	}
 
-	*thres = thr / rel;
+	*thres = maxval * thr / histsize;
+
+	free(hist);
 
 	return 0;
 }
@@ -404,7 +369,7 @@ int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
 	}
-		
+
 	if ((graddir = malloc(sizeof(double) * img->w * img->h)) == NULL) {
 		ed_safefree((void **)&gradval);
 		
@@ -482,7 +447,7 @@ int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 		}
 
 	if (thres2 < 0.0 || thres1 < 0.0) {
-		if (otsu(gradval, img->w * img->h, 500, &thres2) < 0)
+		if (otsu(gradval, img->w * img->h, HISTSIZE, &thres2) < 0)
 			return (-1);
 		
 		thres1 = thres2 * 0.5;
@@ -611,110 +576,6 @@ int ed_hough(int *img, int imgw, int imgh, double dang,
 
 	ed_safefree((void **)&acc);
 	ed_safefree((void **)&hl);
-
-	return 0;
-}
-
-static int comppoint(const void *p0, const void *p1)
-{
-	int dif;
-
-	dif = ((struct point *) p1)->x - ((struct point *) p0)->x;
-
-	if (dif)
-		return dif;
-	else
-		return ((struct point *) p1)->y - ((struct point *) p0)->y;
-}
-
-static int compseg(const void *s0, const void *s1)
-{
-	return (((struct lineseg *) s1)->pointc
-		- ((struct lineseg *) s0)->pointc);
-}
-
-int ed_houghseg(int *img, int imgw, int imgh, double *lines, int linec,
-	struct lineseg *seg, int maxsegc, double maxgap)
-{	
-	int imgy, imgx;
-	int linen; 
-	int segc;
-
-	struct point *linep;
-
-	assert(img != NULL || imgw > 0 || imgh > 0
-		|| lines != NULL || linec > 0 || seg != NULL
-		|| maxsegc > 0 || maxgap > 0.0); 
-
-	if ((linep = malloc(sizeof(struct point) * imgw * imgh)) == NULL) {
-		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
-		return (-1);
-	}
-
-	segc = 0;
-
-	for (linen = 0; linen < linec && segc < maxsegc; ++linen) {
-		double ang;
-		int linepc;
-		int pc;
-
-		ang = lines[linen * 2 + 0];
-
-		linepc = 0;
-
-		for (imgy = 0; imgy < imgh; ++imgy)
-			for (imgx = 0; imgx < imgw; ++imgx)
-				if (img[imgy * imgw + imgx]) {
-					int r = ceil(imgx * cos(ang)
-						+ imgy * sin(ang));
-				
-					if (r == lines[linen * 2 + 1]) {
-						linep[linepc].x = imgx;
-						linep[linepc].y = imgy;
-						
-						++linepc;
-					}
-				}
-
-		qsort(linep, linepc, sizeof(struct point), comppoint);
-
-		seg[segc].x0 = linep[0].x;
-		seg[segc].y0 = linep[0].y;
-		seg[segc].x1 = linep[0].x;
-		seg[segc].y1 = linep[0].y;
-		seg[segc].pointc = 0;
-
-		for (pc = 1; pc < linepc ; ++pc) {
-			if (sqrt(pow(((double) linep[pc].x
-				- (double) seg[segc].x1), 2.0)
-				+ pow(((double) linep[pc].y
-				- (double) seg[segc].y1), 2.0))
-				> maxgap) {
-				++segc;
-
-				if (segc >= maxsegc)
-					break;
-
-				seg[segc].x0 = linep[pc].x;
-				seg[segc].y0 = linep[pc].y;
-				seg[segc].x1 = linep[pc].x;
-				seg[segc].y1 = linep[pc].y;
-				seg[segc].pointc = 0;
-			}
-			
-			seg[segc].x1 = linep[pc].x;
-			seg[segc].y1 = linep[pc].y;
-			++seg[segc].pointc;
-		}
-		
-		++segc;		
-	}
-	
-	segc = maxsegc;
-
-	qsort(seg, segc, sizeof(struct lineseg), compseg);
-
-	ed_safefree((void **)&linep);
 
 	return 0;
 }
