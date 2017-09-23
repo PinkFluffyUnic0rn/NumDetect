@@ -42,6 +42,7 @@ int imgcroptofile(struct nd_image *img, struct hc_rect *r, const char *path)
 int main(int argc, char **argv)
 {	
 	struct hc_hcascade hc;
+	struct nd_image imggray;
 	struct nd_image img;
 	struct hc_scanconfig scanconf;
 
@@ -60,17 +61,23 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (nd_imggrayscale(&img) < 0) {
+	if (nd_imgcopy(&img, &imggray) < 0) {
 		fprintf(stderr, nd_geterrormessage());
 		return 1;
 	}
 
-	hc_confbuild(&scanconf, hc.ww, hc.wh, img.w, img.h, 0.9, 1, 1, 8);
+	if (nd_imggrayscale(&imggray) < 0) {
+		fprintf(stderr, nd_geterrormessage());
+		return 1;
+	}
 
+	hc_confbuild(&scanconf, hc.ww, hc.wh, imggray.w, imggray.h,
+		0.9, 1, 1, 8);
+	
 	struct timespec ts, te;
 	clock_gettime(CLOCK_REALTIME, &ts);
 
-	hc_imgpyramidscan(&hc, &img, &newr, &newrc, &scanconf);
+	hc_imgpyramidscan(&hc, &imggray, &newr, &newrc, &scanconf);
 	
 	clock_gettime(CLOCK_REALTIME, &te);
 	printf("%lf\n", te.tv_sec + te.tv_nsec * 1e-9
@@ -83,8 +90,8 @@ int main(int argc, char **argv)
 		
 		double rh = abs(newr[rn].y0 - newr[rn].y1);
 
-		newr[rn].y0 = (int) (newr[rn].y0) - (rh * 0.15);
-		newr[rn].y1 = newr[rn].y1 + (rh * 0.15);
+		newr[rn].y0 = (int) (newr[rn].y0) - (rh * 0.2);
+		newr[rn].y1 = newr[rn].y1 + (rh * 0.4);
 
 		if (newr[rn].y0 >= 0 && newr[rn].y1 < img.h)
 			if (imgcroptofile(&img, newr + rn, a) < 0) {

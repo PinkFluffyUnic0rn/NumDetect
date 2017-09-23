@@ -24,10 +24,10 @@
 #include "gui.h"
 
 #define IMGWIDTH 640
-#define ADDHEIGHTTOP 0.2
-#define ADDHEIGHTBOT 0.4
-// #define ADDHEIGHTTOP 0.0
-// #define ADDHEIGHTBOT 0.0
+//#define ADDHEIGHTTOP 0.2
+//#define ADDHEIGHTBOT 0.4
+#define ADDHEIGHTTOP 0.0
+#define ADDHEIGHTBOT 0.0
 
 struct avdata {
 	AVFormatContext *s;
@@ -37,7 +37,8 @@ struct avdata {
 };
 
 struct hcdata {
-	struct hc_hcascade hc;
+	struct hc_hcascade hccar;
+	struct hc_hcascade hcspec;
 	struct nd_image img;
 	struct hc_scanconfig scanconf;
 };
@@ -469,7 +470,7 @@ int rectgetorignum(struct nd_image *imgorig, struct hc_rect *r,
 }
 
 int restofile(struct nd_image *imgnum,
-	double inpoints[8], const char *outputfile)
+	double inpoints[8], const char *outputdir)
 {
 	struct nd_matrix3 borderpersp;
 	double outpoints[8];
@@ -488,8 +489,10 @@ int restofile(struct nd_image *imgnum,
 		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
-
 /*
+	char imgpath[1024];
+	static int foundn = 0;
+
 	sprintf(imgpath, "%s/%d(before persp).png", outputdir,
 		foundn);
 	nd_imgwrite(imgnum, imgpath);
@@ -501,12 +504,24 @@ int restofile(struct nd_image *imgnum,
 		return (-1);
 	}
 
-	nd_imgwrite(imgnum, outputfile);
+	char imgpath[1024];	
+	static int foundn = 0;	
+	if (sprintf(imgpath, "%s/%d.png", outputdir,
+		foundn++)
+		< 0) {
+		fprintf(stderr, "sprintf: %s.\n",
+			strerror(errno));
+		return (-1);
+	}
+
+	nd_imgwrite(imgnum, imgpath);
 
 /*
 	sprintf(imgpath, "%s/%d(orig).png", outputdir,
 		foundn - 1);
 	nd_imgwrite(&imgcropped, imgpath);
+
+
 
 	sprintf(imgpath, "%s/%d(transformed).png", outputdir,
 		foundn - 1);
@@ -555,36 +570,20 @@ int nd_imgdrawrect(struct nd_image *img, struct bg_rect *r)
 int scanloop(struct nd_image *img, const char *hccarpath,
 	const char *hcspecpath, const char *outputdir)
 {
-	struct hcdata hccard;
-	struct hcdata hcspecd;
+	struct hcdata hcd;
 	struct bg_context ctx;
 	struct nd_matrix3 perspmat;
 	struct nd_image imgmini;
 	struct nd_image imgorig;
 	int rn;
-	int foundn;
 
-	foundn = 0;
-
-	if (hc_hcascaderead(&(hccard.hc), hccarpath) < 0) {
+	if (hc_hcascaderead(&(hcd.hccar), hccarpath) < 0) {
 		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
-	if (hc_confbuild(&(hccard.scanconf),
-		hccard.hc.ww, hccard.hc.wh, img->w, img->h, 0.9, 1, 1, threadcount)
-		< 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	if (hc_hcascaderead(&(hcspecd.hc), hcspecpath) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	if (hc_confbuild(&(hcspecd.scanconf),
-		hcspecd.hc.ww, hcspecd.hc.wh, img->w, img->h,
+	if (hc_confbuild(&(hcd.scanconf),
+		hcd.hccar.ww, hcd.hccar.wh, img->w, img->h,
 		0.9, 1, 1, threadcount) < 0) {
 		fprintf(stderr, nd_geterrormessage());
 		return (-1);
@@ -677,8 +676,8 @@ int scanloop(struct nd_image *img, const char *hccarpath,
 				return (-1);
 			}
 
-			if (hc_imgpyramidscan(&(hccard.hc), &imgcropped, &r, &rc,
-				&(hccard.scanconf)) < 0) {
+			if (hc_imgpyramidscan(&(hcd.hccar), &imgcropped,
+				&r, &rc, &(hcd.scanconf)) < 0) {
 				fprintf(stderr, nd_geterrormessage());
 				return (-1);
 			}
@@ -718,10 +717,13 @@ int scanloop(struct nd_image *img, const char *hccarpath,
 					return (-1);
 
 				char imgpath[1024];
-				sprintf(imgpath, "%s/%d(before persp).png", outputdir,
-					foundn);
-				nd_imgwrite(&imgnum, imgpath);		
+				static int foundn = 0;
 
+				sprintf(imgpath, "%s/%d(before persp).png", outputdir,
+					foundn++);
+				nd_imgwrite(&imgnum, imgpath);	
+	
+/*
 				nd_imgcopy(&imgnum, &imghsv);
 
 				if (nd_imghsvval(&imghsv) < 0) {
@@ -732,97 +734,14 @@ int scanloop(struct nd_image *img, const char *hccarpath,
 				if (ed_findborder(&imghsv, inpoints) < 0)
 					continue;
 
-				if (sprintf(imgpath, "%s/%d.png", outputdir,
-					foundn)
-					< 0) {
-					fprintf(stderr, "sprintf: %s.\n",
-						strerror(errno));
-					return (-1);
-				}
-
 				if (restofile(&imgnum,
-					inpoints, imgpath) < 0)
+					inpoints, outputdir) < 0)
 					return (-1);
-			
-				++foundn;
+*/
 			}
 
 			if (rc)
 				free(r);
-
-
-			if (hc_imgpyramidscan(&(hcspecd.hc), &imgcropped,
-				&r, &rc, &(hcspecd.scanconf)) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-
-			for (rn = 0; rn < rc; ++rn) {
-				struct nd_image imgnum;
-				struct nd_image imghsv;
-				double inpoints[8];
-
-///////////////////////////////////////////////////////////////////////////////
-				double td;
-
-				clock_gettime(CLOCK_REALTIME, &te);
-				
-				td = (te.tv_sec - ts.tv_sec)
-					+ (te.tv_nsec - ts.tv_nsec) * 1e-9;
-			
-				double h, m, s;
-
-				h = td / 3600.0;
-				m = (h - (int) h) * 60.0;
-				s = (m - (int) m) * 60.0;
-				
-				printf("detected: %02d:%02d:%02d\n",
-					(int) h, (int) m, (int) s);
-///////////////////////////////////////////////////////////////////////////////
-
-				r[rn].x0 += fgr[i].x0;
-				r[rn].y0 += fgr[i].y0;
-				r[rn].x1 += fgr[i].x0;
-				r[rn].y1 += fgr[i].y0;
-
-				if (rectgetorignum(&imgorig, r + rn, &perspmat,
-					(double) img->w / IMGWIDTH, &imgnum) < 0)
-					return (-1);
-
-				char imgpath[1024];
-				sprintf(imgpath, "%s/%d(before persp).png", outputdir,
-					foundn);
-				nd_imgwrite(&imgnum, imgpath);
-
-				nd_imgcopy(&imgnum, &imghsv);
-
-				if (nd_imghsvval(&imghsv) < 0) {
-					fprintf(stderr, nd_geterrormessage());
-					return (-1);
-				}
-
-				if (ed_findborder(&imghsv, inpoints) < 0)
-					continue;
-
-				if (sprintf(imgpath, "%s/%d.png", outputdir,
-					foundn)
-					< 0) {
-					fprintf(stderr, "sprintf: %s.\n",
-						strerror(errno));
-					return (-1);
-				}
-
-				if (restofile(&imgnum,
-					inpoints, imgpath) < 0)
-					return (-1);
-			
-				++foundn;
-			}
-
-			if (rc)
-				free(r);
-
-
 
 			nd_imgdestroy(&imgcropped);
 		}

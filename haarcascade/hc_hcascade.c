@@ -98,7 +98,14 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
 			goto imggrayscalerror;
 		}
-			
+
+/*
+		static int n = 0;
+		char a[255];
+		sprintf(a, "res/_%d.png", ++n);
+		nd_imgwrite(ts->img + imgn, a);
+*/
+
 		hc_safefree((void **)&imgpath);
 	}
 	
@@ -107,8 +114,9 @@ int hc_readtrset(struct hc_trainingset *ts, const char *hcpath)
 		goto isgoodmallocerror;
 	}
 
-	for (imgn = 0; imgn < ts->imgc; ++imgn)
+	for (imgn = 0; imgn < ts->imgc; ++imgn) {
 		ts->isgood[imgn] = imgn < goodc ? 1 : 0;
+	}
 
 	return 0;
 

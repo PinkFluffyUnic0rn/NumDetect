@@ -187,6 +187,7 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 		return (-1);
 
 ////////////////////////////////////////////////
+
 	const char *path;
 
 	switch(lineorient) {
@@ -206,6 +207,7 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	}
 
 	printmask(mask, img->w, img->h, path);
+
 ////////////////////////////////////////////////
 
 

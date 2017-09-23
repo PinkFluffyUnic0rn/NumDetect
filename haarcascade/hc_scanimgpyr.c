@@ -254,13 +254,14 @@ void *pyrcheckfunc(void *a)
 	ret->rc = 0;
 
 	curidx = arg->map;
+
 	while (*curidx >= 0) {
 		struct hc_rect *tmpr;
 		int tmprc;
 		int rn;
 
 		struct nd_image scaledimg;
-
+		
 		if (nd_imgscalebilinear(arg->img,
 			pow(arg->conf->scalestep, *curidx),
 			pow(arg->conf->scalestep, *curidx), &scaledimg) < 0)
@@ -345,6 +346,10 @@ int hc_imgpyramidscan(struct hc_hcascade *hc, const struct nd_image *img,
 	if (rc > 0 && hc_conrect(r, rc, newr, newrc) < 0)
 		return (-1);
 
+/*
+	*newr = r;
+	*newrc = rc;
+*/
 
 	return 0;
 }
