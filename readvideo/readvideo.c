@@ -222,7 +222,7 @@ int readframe(AVFormatContext *s, AVCodecContext *vcodecc, int vstreamid,
 			fprintf(stderr, "%s\n", buf);
 
 			return (-1);
-		}
+		}	
 	}
 
 	av_packet_unref(&pack);
