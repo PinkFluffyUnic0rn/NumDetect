@@ -97,8 +97,8 @@ int openvideocodec(AVFormatContext *s, AVCodecContext **vcodecc, int vstreamid)
 
 	avcodec_copy_context(*vcodecc, s->streams[vstreamid]->codec);
 
-	if (vcodec->capabilities & CODEC_CAP_TRUNCATED)
-		(*vcodecc)->flags |= CODEC_FLAG_TRUNCATED;
+	if (vcodec->capabilities & AV_CODEC_CAP_TRUNCATED)
+		(*vcodecc)->flags |= AV_CODEC_FLAG_TRUNCATED;
 
 	if ((ret = avcodec_open2(*vcodecc, vcodec, NULL)) < 0) {
 		char buf[255];
