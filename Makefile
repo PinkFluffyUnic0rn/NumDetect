@@ -1,4 +1,4 @@
-DIRS = edgedetect haarcascade neuronet readvideo segplate bgmodel
+DIRS = edgedetect haarcascade readvideo bgmodel
 DIRSMAKE = $(DIRS:%=make-%)
 DIRSCLEAN = $(DIRS:%=clean-%)
 

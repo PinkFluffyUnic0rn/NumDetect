@@ -2,7 +2,7 @@ CC = gcc
 
 UTILINC = ../utility
 UTILOBJ = $(UTILINC)/nd_error.o $(UTILINC)/nd_image.o $(UTILINC)/nd_vecmat.o
-NORMPLATEOBJ = $(UTILOBJ) ed_edgedetect.o ed_findborder.o normplate.o
+NORMPLATEOBJ = $(UTILOBJ) ed_edgedetect.o ed_findborder.o ed_fft.o normplate.o
 NORMPLATEBIN = ../bin/normplate
 
 LIB = `pkg-config --cflags --libs gtk+-3.0` -lm

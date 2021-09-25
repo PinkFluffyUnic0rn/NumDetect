@@ -9,7 +9,7 @@ UTILOBJ = $(UTILINC)/nd_error.o $(UTILINC)/nd_image.o $(UTILINC)/nd_vecmat.o\
 $(UTILINC)/nd_procsync.o
 BGMOBJ=$(BGMINC)/bgmodel.o $(BGMINC)/em3d.o
 HCOBJ= $(HCINC)/hc_hcascade.o $(HCINC)/hc_rect.o $(HCINC)/hc_scanimgpyr.o
-EDOBJ = $(EDINC)/ed_edgedetect.o $(EDINC)/ed_findborder.o
+EDOBJ = $(EDINC)/ed_edgedetect.o $(EDINC)/ed_findborder.o $(EDINC)/ed_fft.o
 READVIDEOOBJ= $(UTILOBJ) $(BGMOBJ) $(HCOBJ) $(EDOBJ) readvideo.o gui.o
 
 READVIDEOBIN = ../bin/readvideo

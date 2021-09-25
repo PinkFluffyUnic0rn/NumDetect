@@ -1,12 +1,13 @@
 #!/bin/sh
 
 normplate=bin/normplate;
-edfiles=files/hcspecnum/edgedetect;
+edfiles=files/hccarnum/edgedetect;
 
-for file in $edfiles/1/*.png
+for file in $edfiles/nums/*.png
 do
 	mkdir $edfiles/res/`basename $file`;
-	$normplate $file $edfiles/res/`basename $file`/res.png;
+	$normplate $file edgedetect/model.png \
+	$edfiles/res/`basename $file`/res.png;
 
 	a="$edfiles/res/`basename $file`";
 
