@@ -36,10 +36,12 @@ struct avdata {
 	int vstreamid;
 };
 
-struct hcdata {
+struct carnumscanner {
 	struct hc_hcascade hc;
 	struct nd_image img;
 	struct hc_scanconfig scanconf;
+	struct nd_image *models;
+	int modelscount;
 };
 
 struct playbackstate {
@@ -48,10 +50,24 @@ struct playbackstate {
 	int64_t timestamp;
 };
 
+struct haarcascadepath {
+	char **hcpath;
+	char **modelspath;
+	int *modelscount;
+	int hccount;
+};
 
 const int threadcount = 8;
 
 struct nd_image *drawimg;
+
+static void nd_safefree(void **p)
+{
+	if (*p != NULL) {
+		free(*p);
+		*p = NULL;
+	}
+}
 
 int openinput(AVFormatContext **s, const char *pathname, int *vstreamid)
 {
@@ -285,41 +301,6 @@ int getperspmat(int w, int h, struct nd_matrix3 *m)
 	return 0;
 }
 
-int normalizenum(struct nd_image *imginwin)
-{
-	struct nd_matrix3 persp;
-	struct nd_image imghsv;
-	double inpoints[8];
-	double outpoints[8];
-	
-	nd_imgcopy(imginwin, &imghsv);
-	
-	if (nd_imghsvval(&imghsv) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-		
-	if (ed_findborder(&imghsv, inpoints) < 0)
-		return (-1);
-
-	outpoints[0] = 0.0;		outpoints[1] = 0.0;
-	outpoints[2] = imginwin->w;	outpoints[3] = 0.0;
-	outpoints[4] = imginwin->w;	outpoints[5] = imginwin->h;
-	outpoints[6] = 0.0;		outpoints[7] = imginwin->h;
-
-	if (nd_getpersptransform(inpoints, outpoints, &persp) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	if (nd_imgapplytransform(imginwin, &persp, imginwin) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	return 0;
-}
-
 int pbstateinit(struct playbackstate *pbs, double fr)
 {
 	pbs->framerate = fr;
@@ -443,25 +424,18 @@ int rectgetorignum(struct nd_image *imgorig, struct hc_rect *r,
 	outpoints[4] = winw; 	outpoints[5] = winh;
 	outpoints[6] = 0; 	outpoints[7] = winh;
 
-	if (nd_getpersptransform(inpoints, outpoints, &persporig) < 0) {
-		fprintf(stderr, nd_geterrormessage());
+	if (nd_getpersptransform(inpoints, outpoints, &persporig) < 0)
 		return (-1);
-	}
 
-	if (nd_imgapplytransform(imgorig, &persporig, imgorig) < 0) {
-		fprintf(stderr, nd_geterrormessage());
+	if (nd_imgapplytransform(imgorig, &persporig, imgorig) < 0)
 		return (-1);
-	}
 	
-	if (nd_imgcreate(imginwin, winw, winh, imgorig->format) < 0) {
-		fprintf(stderr, nd_geterrormessage());
+	if (nd_imgcreate(imginwin, winw, winh, imgorig->format) < 0)
 		return (-1);
-	}
 
 	if (nd_imgcrop(imgorig, 0, 0, winw, winh, imginwin) < 0) {
 		nd_imgdestroy(imginwin);
 		
-		fprintf(stderr, nd_geterrormessage());
 		return (-1);
 	}
 
@@ -489,12 +463,6 @@ int restofile(struct nd_image *imgnum,
 		return (-1);
 	}
 
-/*
-	sprintf(imgpath, "%s/%d(before persp).png", outputdir,
-		foundn);
-	nd_imgwrite(imgnum, imgpath);
-*/
-
 	if (nd_imgapplytransform(imgnum, &borderpersp,
 		imgnum) < 0) {
 		fprintf(stderr, nd_geterrormessage());
@@ -503,15 +471,178 @@ int restofile(struct nd_image *imgnum,
 
 	nd_imgwrite(imgnum, outputfile);
 
-/*
-	sprintf(imgpath, "%s/%d(orig).png", outputdir,
-		foundn - 1);
-	nd_imgwrite(&imgcropped, imgpath);
+	return 0;
+}
 
-	sprintf(imgpath, "%s/%d(transformed).png", outputdir,
-		foundn - 1);
-	nd_imgwrite(&imgtr, imgpath);
-*/
+int printelapsed(struct timespec *ts, struct timespec *te, FILE *file)
+{
+	double h, m, s;
+	double td;
+		
+	td = (te->tv_sec - ts->tv_sec) + (te->tv_nsec - ts->tv_nsec) * 1e-9;
+
+	h = td / 3600.0;
+	m = (h - (int) h) * 60.0;
+	s = (m - (int) m) * 60.0;
+	
+	fprintf(file, "detected: %02d:%02d:%02d\n",
+		(int) h, (int) m, (int) s);
+
+	return 0;
+}
+
+int getcarnum(struct nd_image *imgorig, struct nd_image *imgtr,
+	struct nd_matrix3 perspmat, struct bg_rect *fgr,
+	struct carnumscanner *hcd, int hccount, struct timespec *ts,
+	const char *outputdir)
+{
+	int hcn;
+	struct nd_image imgcropped;
+	static int foundn = 0;
+
+	if (nd_imgcreate(&imgcropped, fgr->x1 - fgr->x0,
+		fgr->y1 - fgr->y0, ND_PF_RGB) < 0)
+		return (-1);
+
+	if (nd_imgcrop(imgtr, fgr->x0, fgr->y0,
+		fgr->x1 - fgr->x0, fgr->y1 - fgr->y0, &imgcropped) < 0)
+		return (-1);
+		
+	if (nd_imggrayscale(&imgcropped) < 0)
+		return (-1);
+
+	for (hcn = 0; hcn < hccount; ++hcn) {
+		struct carnumscanner *curhc;
+		struct hc_rect *r;
+		int rc;
+		int rn;
+
+		curhc = hcd + hcn;
+
+		if (hc_imgpyramidscan(&(curhc->hc), &imgcropped, &r, &rc,
+			&(curhc->scanconf)) < 0)
+			return (-1);
+
+		for (rn = 0; rn < rc; ++rn) {
+			struct nd_image imgnum;
+			struct nd_image imghsv;
+			double inpoints[8];
+			struct timespec te;
+			int bm;
+
+			clock_gettime(CLOCK_REALTIME, &te);
+			printelapsed(ts, &te, stdout);
+
+			r[rn].x0 += fgr->x0;
+			r[rn].y0 += fgr->y0;
+			r[rn].x1 += fgr->x0;
+			r[rn].y1 += fgr->y0;
+
+			if (rectgetorignum(imgorig, r + rn, &perspmat,
+				(double) imgorig->w / IMGWIDTH, &imgnum) < 0)
+				return (-1);
+
+///////////////////////////////////////////////////////////////////////////////
+			char imgpath[1024];
+			sprintf(imgpath, "%s/%d_0.png",
+				outputdir, foundn);
+			nd_imgwrite(&imgnum, imgpath);		
+///////////////////////////////////////////////////////////////////////////////
+
+			nd_imgcopy(&imgnum, &imghsv);
+
+			if (nd_imghsvval(&imghsv) < 0)
+				return (-1);
+
+			if (ed_findborder(&imghsv, curhc->models,
+				curhc->modelscount, inpoints, &bm) < 0)
+				continue;
+
+			if (sprintf(imgpath, "%s/%d_1.png", outputdir, foundn)
+				< 0) {
+				fprintf(stderr, "sprintf: %s.\n",
+					strerror(errno));
+				return (-1);
+			}
+
+///////////////////////////////////////////////////////////////////////////////
+			if (restofile(&imgnum, inpoints, imgpath) < 0)
+				return (-1);
+///////////////////////////////////////////////////////////////////////////////
+			
+			++foundn;
+		}
+
+		if (rc)
+			free(r);
+	}
+
+	nd_imgdestroy(&imgcropped);
+
+	return 0;
+}
+
+int loadcarnumscanners(struct haarcascadepath *hcpath,
+	struct carnumscanner **hcd, int *hccount)
+{
+	int hcn;
+	int modeln;
+
+	if ((*hcd = malloc(sizeof(struct carnumscanner) * hcpath->hccount))
+		== NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		return (-1);	
+	}
+
+	*hccount = hcpath->hccount;
+
+	modeln = 0;
+	for (hcn = 0; hcn < hcpath->hccount; ++hcn) {
+		struct carnumscanner *curhc;
+		int i;
+
+		curhc = *hcd + hcn;
+	
+		if (hc_hcascaderead(&(curhc->hc), hcpath->hcpath[hcn]) < 0)
+			return (-1);
+
+		if ((curhc->models = malloc(sizeof(struct nd_image)
+			* hcpath->modelscount[hcn])) == NULL) {
+			nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+			return (-1);	
+		}
+
+		curhc->modelscount = hcpath->modelscount[hcn];
+		
+		for (i = 0; i < hcpath->modelscount[hcn]; ++i) {
+			if (nd_imgread(hcpath->modelspath[modeln],
+				curhc->models + i) < 0)
+				return (-1);
+
+			if (nd_imggrayscale(curhc->models + i) < 0)
+				return (-1);
+		
+			++modeln;
+		}
+	}
+
+	return 0;
+}
+
+int initcarnumscanners(struct carnumscanner *hcd, int hccount,
+	int imgw, int imgh)
+{
+	int hcn;
+	
+	for (hcn = 0; hcn < hccount; ++hcn) {
+		struct carnumscanner *curhc;
+		
+		curhc = hcd + hcn;
+		
+		if (hc_confbuild(&(curhc->scanconf), curhc->hc.ww,
+			curhc->hc.wh, imgw, imgh, 0.9, 1, 1, threadcount) < 0)
+			return (-1);
+	}
 
 	return 0;
 }
@@ -552,280 +683,96 @@ int nd_imgdrawrect(struct nd_image *img, struct bg_rect *r)
 	return 0;
 }
 
-int scanloop(struct nd_image *img, const char *hccarpath,
-	const char *hcspecpath, const char *outputdir)
+int bgmdrawdetected(struct nd_image *imgtr, struct bg_rect *fgr, int fgrc,
+	int bgmw, int bgmh, struct nd_image *drawimg)
 {
-	struct hcdata hccard;
-	struct hcdata hcspecd;
+	int i;
+
+	memcpy(drawimg->data, imgtr->data,
+		sizeof(double) * 3 * drawimg->w * drawimg->h);
+
+	for (i = 0; i < fgrc; ++i) {
+		struct bg_rect newr;
+
+		newr.x0 = drawimg->w * fgr[i].x0 / bgmw;
+		newr.y0 = drawimg->h * fgr[i].y0 / bgmh;
+		newr.x1 = drawimg->w * fgr[i].x1 / bgmw;
+		newr.y1 = drawimg->h * fgr[i].y1 / bgmh;
+		
+		nd_imgdrawrect(drawimg, &newr);
+	}
+
+	return 0;
+}
+
+int scanloop(struct nd_image *img, struct haarcascadepath *hcpath,
+	const char *outputdir)
+{
+	struct carnumscanner *hcd;
+	int hccount;
 	struct bg_context ctx;
 	struct nd_matrix3 perspmat;
 	struct nd_image imgmini;
 	struct nd_image imgorig;
-	int rn;
-	int foundn;
-
-	foundn = 0;
-
-	if (hc_hcascaderead(&(hccard.hc), hccarpath) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	if (hc_confbuild(&(hccard.scanconf),
-		hccard.hc.ww, hccard.hc.wh, img->w, img->h, 0.9, 1, 1, threadcount)
-		< 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	if (hc_hcascaderead(&(hcspecd.hc), hcspecpath) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
-
-	if (hc_confbuild(&(hcspecd.scanconf),
-		hcspecd.hc.ww, hcspecd.hc.wh, img->w, img->h,
-		0.9, 1, 1, threadcount) < 0) {
-		fprintf(stderr, nd_geterrormessage());
-		return (-1);
-	}
+	struct timespec ts;
 
 	if (bg_initcontext(&ctx, 5, 0.3, 0.05, IMGWIDTH,
 		img->h * IMGWIDTH / img->w, 30, 1) < 0)
 		return (-1);
 
+	if (loadcarnumscanners(hcpath, &hcd, &hccount) < 0)
+		return (-1);
+
+	if (initcarnumscanners(hcd, hccount, img->w, img->h) < 0)
+		return (-1);
+
 	if (getperspmat(IMGWIDTH, img->h * IMGWIDTH / img->w, &perspmat) < 0)
 		return (-1);
 
-///////////////////////////////////////////////////////////////////////////////
-	struct timespec ts, te;
 	clock_gettime(CLOCK_REALTIME, &ts);
-///////////////////////////////////////////////////////////////////////////////
 	
 	while (1) {
-		struct nd_image imgtr;
 		struct bg_rect *fgr;
+		struct nd_image imgtr;
 		int fgrc;
-		struct hc_rect *r;
-		int rc;
 		int i;
 
-		if (nd_pslock(1) < 0) {
-			fprintf(stderr, nd_geterrormessage());
+		if (nd_pslock(1) < 0)
 			return (-1);
-		}
 
 		if (img->data == NULL)
 			return 0;
-
-		if (nd_imgcopy(img, &imgorig) < 0) {
-			fprintf(stderr, nd_geterrormessage());
+ struct timespec ts, te;
+ clock_gettime(CLOCK_REALTIME, &ts);
+		if (nd_imgcopy(img, &imgorig) < 0)
 			return (-1);
-		}
 
 		if (nd_imgscalebilinear(&imgorig, (double) IMGWIDTH / imgorig.w,
-			(double) IMGWIDTH / imgorig.w , &imgmini) < 0) {
-			fprintf(stderr, nd_geterrormessage());
+			(double) IMGWIDTH / imgorig.w , &imgmini) < 0)
 			return (-1);
-		}
 
-		if (nd_imgapplytransform(&imgmini, &perspmat, &imgtr) < 0) {
-			fprintf(stderr, nd_geterrormessage());
+		if (nd_imgapplytransform(&imgmini, &perspmat, &imgtr) < 0)
 			return (-1);
-		}
 
 		if (bg_putimgtocontext(&ctx, &imgtr, &fgr, &fgrc) < 0)
 			return (-1);
 
-		memcpy(drawimg->data, imgtr.data,
-			sizeof(double) * 3 * drawimg->w * drawimg->h);
+ clock_gettime(CLOCK_REALTIME, &te);
+ printf("%lf\n", (te.tv_sec - ts.tv_sec) + (te.tv_nsec - ts.tv_nsec) * 1e-9);
+///////////////////////////////////////////////////////////////////////////////
+		bgmdrawdetected(&imgtr, fgr, fgrc,
+			ctx.bgm.w, ctx.bgm.h, drawimg);
+///////////////////////////////////////////////////////////////////////////////
 
-		for (i = 0; i < fgrc; ++i) {
-			struct bg_rect newr;
-
-			newr.x0 = drawimg->w * fgr[i].x0 / ctx.bgm.w;
-			newr.y0 = drawimg->h * fgr[i].y0 / ctx.bgm.h;
-			newr.x1 = drawimg->w * fgr[i].x1 / ctx.bgm.w;
-			newr.y1 = drawimg->h * fgr[i].y1 / ctx.bgm.h;
-			
-			nd_imgdrawrect(drawimg, &newr);
-		}
-
-		if (nd_psunlock(1) < 0) {
-			fprintf(stderr, nd_geterrormessage());
+		if (nd_psunlock(1) < 0)
 			return (-1);
-		}
 
 		if (fgrc == 0)
 			goto endstep;
-		
-		for (i = 0; i < fgrc; ++i) {
-			struct nd_image imgcropped;
-
-			if (nd_imgcreate(&imgcropped, fgr[i].x1 - fgr[i].x0,
-				fgr[i].y1 - fgr[i].y0, ND_PF_RGB) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-
-			nd_imgcrop(&imgtr, fgr[i].x0, fgr[i].y0,
-				fgr[i].x1 - fgr[i].x0, fgr[i].y1 - fgr[i].y0,
-				&imgcropped);
-				
-			if (nd_imggrayscale(&imgcropped) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-
-			if (hc_imgpyramidscan(&(hccard.hc), &imgcropped, &r, &rc,
-				&(hccard.scanconf)) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-
-			for (rn = 0; rn < rc; ++rn) {
-				struct nd_image imgnum;
-				struct nd_image imghsv;
-				double inpoints[8];
-
-//				printf("Detected.\n");
-
-///////////////////////////////////////////////////////////////////////////////
-				double td;
-
-				clock_gettime(CLOCK_REALTIME, &te);
-				
-				td = (te.tv_sec - ts.tv_sec)
-					+ (te.tv_nsec - ts.tv_nsec) * 1e-9;
-			
-				double h, m, s;
-
-				h = td / 3600.0;
-				m = (h - (int) h) * 60.0;
-				s = (m - (int) m) * 60.0;
-				
-				printf("detected: %02d:%02d:%02d\n",
-					(int) h, (int) m, (int) s);
-///////////////////////////////////////////////////////////////////////////////
-
-				r[rn].x0 += fgr[i].x0;
-				r[rn].y0 += fgr[i].y0;
-				r[rn].x1 += fgr[i].x0;
-				r[rn].y1 += fgr[i].y0;
-
-				if (rectgetorignum(&imgorig, r + rn, &perspmat,
-					(double) img->w / IMGWIDTH, &imgnum) < 0)
-					return (-1);
-
-				char imgpath[1024];
-				sprintf(imgpath, "%s/%d(before persp).png", outputdir,
-					foundn);
-				nd_imgwrite(&imgnum, imgpath);		
-
-				nd_imgcopy(&imgnum, &imghsv);
-
-				if (nd_imghsvval(&imghsv) < 0) {
-					fprintf(stderr, nd_geterrormessage());
-					return (-1);
-				}
-
-				if (ed_findborder(&imghsv, inpoints) < 0)
-					continue;
-
-				if (sprintf(imgpath, "%s/%d.png", outputdir,
-					foundn)
-					< 0) {
-					fprintf(stderr, "sprintf: %s.\n",
-						strerror(errno));
-					return (-1);
-				}
-
-				if (restofile(&imgnum,
-					inpoints, imgpath) < 0)
-					return (-1);
-			
-				++foundn;
-			}
-
-			if (rc)
-				free(r);
-
-
-			if (hc_imgpyramidscan(&(hcspecd.hc), &imgcropped,
-				&r, &rc, &(hcspecd.scanconf)) < 0) {
-				fprintf(stderr, nd_geterrormessage());
-				return (-1);
-			}
-
-			for (rn = 0; rn < rc; ++rn) {
-				struct nd_image imgnum;
-				struct nd_image imghsv;
-				double inpoints[8];
-
-///////////////////////////////////////////////////////////////////////////////
-				double td;
-
-				clock_gettime(CLOCK_REALTIME, &te);
-				
-				td = (te.tv_sec - ts.tv_sec)
-					+ (te.tv_nsec - ts.tv_nsec) * 1e-9;
-			
-				double h, m, s;
-
-				h = td / 3600.0;
-				m = (h - (int) h) * 60.0;
-				s = (m - (int) m) * 60.0;
-				
-				printf("detected: %02d:%02d:%02d\n",
-					(int) h, (int) m, (int) s);
-///////////////////////////////////////////////////////////////////////////////
-
-				r[rn].x0 += fgr[i].x0;
-				r[rn].y0 += fgr[i].y0;
-				r[rn].x1 += fgr[i].x0;
-				r[rn].y1 += fgr[i].y0;
-
-				if (rectgetorignum(&imgorig, r + rn, &perspmat,
-					(double) img->w / IMGWIDTH, &imgnum) < 0)
-					return (-1);
-
-				char imgpath[1024];
-				sprintf(imgpath, "%s/%d(before persp).png", outputdir,
-					foundn);
-				nd_imgwrite(&imgnum, imgpath);
-
-				nd_imgcopy(&imgnum, &imghsv);
-
-				if (nd_imghsvval(&imghsv) < 0) {
-					fprintf(stderr, nd_geterrormessage());
-					return (-1);
-				}
-
-				if (ed_findborder(&imghsv, inpoints) < 0)
-					continue;
-
-				if (sprintf(imgpath, "%s/%d.png", outputdir,
-					foundn)
-					< 0) {
-					fprintf(stderr, "sprintf: %s.\n",
-						strerror(errno));
-					return (-1);
-				}
-
-				if (restofile(&imgnum,
-					inpoints, imgpath) < 0)
-					return (-1);
-			
-				++foundn;
-			}
-
-			if (rc)
-				free(r);
-
-
-
-			nd_imgdestroy(&imgcropped);
-		}
+	
+		for (i = 0; i < fgrc; ++i)	
+			getcarnum(&imgorig, &imgtr, perspmat, fgr + i,
+				hcd, hccount, &ts, outputdir);
 
 		free(fgr);
 
@@ -835,6 +782,7 @@ int scanloop(struct nd_image *img, const char *hccarpath,
 		nd_imgdestroy(&imgorig);
 	}
 
+	free(hcd);
 	fprintf(stderr, "Unexpexted loop quit\n");
 	return (-1);
 }
@@ -1069,11 +1017,109 @@ int decodeloop(struct avdata *av, struct nd_image *img)
 	return (-1);
 }
 
+int readhcpath(const char *path, struct haarcascadepath *hcpath)
+{
+	FILE *file;
+	int totalmodelscount;
+	int i, ii;
+	
+	if ((file = fopen(path, "r")) == NULL) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		goto fopenerror;
+	}
+
+	if (fscanf(file, "%d", &(hcpath->hccount)) < 0) {
+		nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+		goto scanhccounterror;
+	}
+	
+	if ((hcpath->hcpath = malloc(sizeof(char *) * hcpath->hccount))
+		== NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		goto mallochcpatherror;
+	}
+
+	if ((hcpath->modelscount = malloc(sizeof(int) * hcpath->hccount))
+		== NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		goto mallocmodelscounterror;
+	}
+
+	totalmodelscount = 0;
+	for (i = 0; i < hcpath->hccount; ++i) {
+		if (fscanf(file, "%d", hcpath->modelscount + i) < 0) {
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+			goto scanmodelscounterror;
+		}
+		
+		totalmodelscount += hcpath->modelscount[i];
+	}
+
+	if ((hcpath->modelspath = malloc(sizeof(char *) * totalmodelscount))
+		== NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		goto mallocmodelpatherror;
+	}
+
+	fscanf(file, "\n");
+	for (i = 0; i < hcpath->hccount; ++i)  {
+		size_t strsz;
+		char **path;
+
+		path = hcpath->hcpath + i;
+		strsz = 0;
+		if (getline(path, &strsz, file) <= 0) {
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+			goto getlineerror;
+		}
+		
+		(*path)[strlen(*path) - 1] = '\0';
+	}
+
+	for (i = 0; i < totalmodelscount; ++i) {
+		size_t strsz;
+		char **path;
+		int res;
+
+		path = hcpath->modelspath + i;
+		strsz = 0;
+		
+		res = getline(path, &strsz, file);
+		
+		if (res <= 0 && res != EOF) {
+			strerror(errno);
+			nd_seterrormessage(ND_MSGFILEIOERROR, __func__);
+			goto getlineerror;
+		}
+		
+		(*path)[strlen(*path) - 1] = '\0';
+	}
+
+	return 0;
+
+getlineerror:
+	nd_safefree((void **) &(hcpath->hcpath));
+
+	for (ii = 0; ii < i - 1; ++i)
+		free(hcpath->modelspath + ii);
+	
+	nd_safefree((void **) &(hcpath->modelspath));
+mallocmodelpatherror:
+scanmodelscounterror:
+mallocmodelscounterror:
+	nd_safefree((void **) &(hcpath->hcpath));
+mallochcpatherror:
+scanhccounterror:
+fopenerror:
+	return (-1);
+}
+
 int main(int argc, char **argv)
 {
 	int chpid;
 	struct avdata av;
 	struct nd_image *img;
+	struct haarcascadepath hcpath;
 	
 	if (initavdata(&av, argv[1]) < 0)
 		return 1;
@@ -1086,6 +1132,11 @@ int main(int argc, char **argv)
 		ND_PF_RGB) < 0)
 		return 1;
 
+	if (readhcpath(argv[2], &hcpath) < 0) {
+		fprintf(stderr, nd_geterrormessage());
+		return 1;
+	}
+
 	if (nd_psinitprefork() < 0) {
 		fprintf(stderr, nd_geterrormessage());
 		return 1;
@@ -1097,7 +1148,7 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		
-		if (scanloop(img, argv[2], argv[3], argv[4]) < 0)
+		if (scanloop(img, &hcpath, argv[3]) < 0)
 			return 1;
 		
 		if (nd_psclose(1) < 0) {

@@ -35,7 +35,11 @@ int nd_imghsvval(struct nd_image *img);
 
 int nd_imggrayscale(struct nd_image *img);
 
+int nd_imgtorgb(struct nd_image *img);
+
 int nd_histequalization(struct nd_image *img, int histsize);
+
+int nd_gammacorrection(struct nd_image *img, double gamma);
 
 int nd_imgnormalize(struct nd_image *img, int avr, int dev);
 

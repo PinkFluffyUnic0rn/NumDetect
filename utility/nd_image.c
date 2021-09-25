@@ -287,6 +287,35 @@ int nd_imggrayscale(struct nd_image *img)
 	return 0;
 }
 
+int nd_imgtorgb(struct nd_image *img)
+{
+	double *rgb;
+	int pixn;
+	
+	assert(img != NULL);
+	assert(nd_imgisvalid(img));
+	assert(nd_imgchanscount(img->format) == 1);
+
+	if ((rgb = malloc(sizeof(double) * img->w * img->h * 3)) == NULL) {
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		return (-1);
+	}
+
+	for (pixn = 0; pixn < img->w * img->h; ++pixn) {
+		rgb[pixn * 3 + 0]
+			= rgb[pixn * 3 + 1]
+			= rgb[pixn * 3 + 2]
+			= img->data[pixn];
+	}
+
+	free(img->data);
+
+	img->format = ND_PF_RGB;
+	img->data = rgb;
+
+	return 0;
+}
+
 static double imgmaxval(double *pix, int imgsize)
 {
 	double maxval;
@@ -392,8 +421,19 @@ int nd_histequalization(struct nd_image *img, int histsize)
 	return 0;
 }
 
+int nd_gammacorrection(struct nd_image *img, double gamma)
+{
+	int pixn;
 
+	assert(img != NULL);
+	assert(nd_imgisvalid(img));
+	assert(img->format == ND_PF_GRAYSCALE);
 
+	for (pixn = 0; pixn < img->w * img->h; ++pixn)
+		img->data[pixn] = pow(img->data[pixn], gamma);
+
+	return 0;
+}
 
 int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 {
@@ -403,7 +443,8 @@ int nd_imgnormalize(struct nd_image *img, int normavr, int normdev)
 	double sd;
 
 	assert(img != NULL);
-	assert(nd_imgisvalid(img) && img->format == ND_PF_GRAYSCALE);
+	assert(nd_imgisvalid(img));
+	assert(img->format == ND_PF_GRAYSCALE);
 
 	pixcount = img->w * img->h;
 	sd = 1.0;
@@ -534,8 +575,10 @@ int nd_imgscalebicubic(const struct nd_image *inimg, double wrel, double hrel,
 	int x, y;
 	struct nd_image tmpimg;
 
-	assert(inimg != NULL && hrel > 0.0 && wrel > 0.0 && outimg != NULL);
+	assert(inimg != NULL); 
 	assert(nd_imgisvalid(inimg));
+	assert(hrel > 0.0 && wrel > 0.0);
+	assert(outimg != NULL);
 
 	tmpimg.w = ceil(wrel * inimg->w);	
 	tmpimg.h = ceil(hrel * inimg->h);
@@ -619,8 +662,10 @@ int nd_imgscalebilinear(const struct nd_image *inimg, double wrel, double hrel,
 	int x, y;
 	struct nd_image tmpimg;
 
-	assert(inimg != NULL && hrel > 0.0 && wrel > 0.0 && outimg != NULL);
+	assert(inimg != NULL); 
 	assert(nd_imgisvalid(inimg));
+	assert(hrel > 0.0 && wrel > 0.0);
+	assert(outimg != NULL);
 
 	tmpimg.w = ceil(wrel * inimg->w);	
 	tmpimg.h = ceil(hrel * inimg->h);
@@ -720,9 +765,8 @@ int nd_imgapplytransform(struct nd_image *imgin, const struct nd_matrix3 *m,
 
 	assert(imgin != NULL && m != NULL && imgout);
 
-	assert(nd_imgisvalid(imgin)
-		&& (imgin->format == ND_PF_GRAYSCALE
-		|| imgin->format == ND_PF_RGB));
+	assert(nd_imgisvalid(imgin));
+	assert(imgin->format == ND_PF_GRAYSCALE || imgin->format == ND_PF_RGB);
 
 	if ((newdata = malloc(sizeof(double) * imgin->w * imgin->h
 		* nd_imgchanscount(imgin->format))) == NULL) {

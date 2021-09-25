@@ -11,10 +11,12 @@
 #include <gtk/gtk.h>
 #include <cairo.h>
 
-#define MAXLINES 10
-#define MAXANGDIF 1.0 * M_PI / 180.0
+#define MAXLINES 5
+#define MAXANGDIF 2.0 * M_PI//2.5 * M_PI / 180.0
+#define MAXOFFSETDIF 1.0
 #define VBANDLEN 0.125
 #define THETAMINVAL 0.001
+#define HOUGHLINESCOUNT 100
 
 enum LINEORIENTATION {
 	LO_TOP,
@@ -114,13 +116,14 @@ static double bandsum(struct nd_image *img,
 
 static int checkline(struct nd_image *img, double theta, double rho,
 	enum LINEORIENTATION lo)
-{	
+{
 	if ((lo == LO_TOP || lo == LO_BOTTOM)
 		&& (theta > M_PI * 0.25 && theta < M_PI * 0.75))
 		return 1;	
 
 	if ((lo == LO_LEFT || lo == LO_RIGHT)
 		&& !(theta > M_PI * 0.25 && theta < M_PI * 0.75)) {	
+/*
 		double sumborder, suml, sumr;
 		double ivbandlen;
 		double valdif;
@@ -144,6 +147,9 @@ static int checkline(struct nd_image *img, double theta, double rho,
 			valdif *= -1.0;
 
 		return valdif > 0.0;
+*/
+		return 1;
+
 	}
 
 	return 0;
@@ -167,6 +173,62 @@ static int printmask(int *mask, int w, int h, const char *path)
 	return 0;
 }
 
+static int imgdrawline(struct nd_image *img, struct lineseg *l)
+{
+	int deltax, deltay;
+	int error;
+	int signy;
+	int x0, y0, x1, y1;
+
+	assert(img->format == ND_PF_RGB);
+
+	x0 = l->x0;
+	y0 = l->y0;
+	x1 = l->x1;
+	y1 = l->y1;
+
+	if (x0 > x1) {
+		double tmp;
+
+		tmp = x0;
+		x0 = x1;
+		x1 = tmp;
+
+		tmp = y0;
+		y0 = y1;
+		y1 = tmp;
+	}
+
+	deltax = abs(x1 - x0);
+	deltay = abs(y1 - y0);
+	signy = y0 < y1 ? 1 : -1;
+	error = deltax - deltay;
+
+	while (x0 != x1 || y0 != y1) {
+		int error2;
+
+		if (y0 >= 0 && y0 < img->w && x0 >= 0 && y0 < img->h) {
+			img->data[(y0 * img->w + x0) * 3 + 0] = 0.0;
+			img->data[(y0 * img->w + x0) * 3 + 1] = 1.0;
+			img->data[(y0 * img->w + x0) * 3 + 2] = 0.0;
+		}
+
+		error2 = error * 2;
+
+		if (error2 > -deltay) {
+			error -= deltay;
+			x0 += 1;
+		}
+
+		if (error2 < deltax) {
+			error += deltax;
+			y0 += signy;
+		}
+	}
+
+	return 0;
+}
+
 static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 	enum LINEORIENTATION lineorient)
 {
@@ -183,11 +245,44 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 		return (-1);
 	}
 
-	if (ed_canny(img, mask, -1.0, -1.0) < 0)
+	if (ed_canny(img, mask, -1.0, -1.0, 0) < 0)
 		return (-1);
 
-////////////////////////////////////////////////
+	if ((hlines = malloc(sizeof(double) * HOUGHLINESCOUNT * 2)) == NULL) {
+		safefree((void **)&mask);
 
+		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
+		return (-1);
+	}
+
+	if (ed_hough(mask, img->w, img->h, M_PI / 180.0,
+		hlines, HOUGHLINESCOUNT) < 0) {
+		safefree((void **)&mask);
+		safefree((void **)&lines);
+		
+		return (-1);
+	}
+
+	maxlinescount = *linescount;
+
+	*linescount = 0;
+	for (linen = 0;
+		(*linescount < maxlinescount) && (linen < HOUGHLINESCOUNT);
+		++linen) {
+		double rho, theta;
+	
+		theta = hlines[linen * 2];
+		rho = hlines[linen * 2 + 1];
+		
+		if (checkline(img, theta, rho, lineorient)) {
+			lines[*linescount * 2] = theta;
+			lines[*linescount * 2 + 1] = rho;
+		
+			++(*linescount);
+		}
+	}
+
+///////////////////////////////////////////////////////////////////////////////
 	const char *path;
 
 	switch(lineorient) {
@@ -206,43 +301,37 @@ static int imgfindlines(struct nd_image *img, double *lines, int *linescount,
 
 	}
 
-	printmask(mask, img->w, img->h, path);
+	struct nd_image imgt;
+	int x, y, w, h;
 
-////////////////////////////////////////////////
+	w = img->w;
+	h = img->h;
 
+	nd_imgcreate(&imgt, w, h, ND_PF_RGB);
 
-	if ((hlines = malloc(sizeof(double) * (*linescount) * 2)) == NULL) {
-		safefree((void **)&mask);
-
-		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
-		return (-1);
-	}
-
-	if (ed_hough(mask, img->w, img->h, M_PI / 180.0, hlines, (*linescount))
-		< 0) {
-		safefree((void **)&mask);
-		safefree((void **)&lines);
-		
-		return (-1);
-	}
-
-	maxlinescount = *linescount;
-	
-	*linescount = 0;
-	for (linen = 0; linen < maxlinescount; ++linen) {
-		double rho, theta;
-	
-		theta = hlines[linen * 2];
-		rho = hlines[linen * 2 + 1];
-		
-		if (checkline(img, theta, rho, lineorient)) {
-			lines[*linescount * 2] = theta;
-			lines[*linescount * 2 + 1] = rho;
-		
-			++(*linescount);
+	for (y = 0; y < h; ++y)
+		for (x = 0; x < w; ++x) {
+			imgt.data[(y * w + x) * 3 + 0] = mask[y * w + x] ? 255 : 0;
+			imgt.data[(y * w + x) * 3 + 1] = mask[y * w + x] ? 255 : 0;
+			imgt.data[(y * w + x) * 3 + 2] = mask[y * w + x] ? 255 : 0;
 		}
+
+	struct lineseg s;
+
+	for (linen = 0; linen < 7; ++linen) {
+		linetoseg(hlines[linen * 2], hlines[linen * 2 + 1],
+			imgt.w, imgt.h, &s);
+
+		imgdrawline(&imgt, &s);
 	}
-	
+
+	nd_imgwrite(&imgt, path);
+
+	nd_imgdestroy(&imgt);
+
+//	printmask(mask, img->w, img->h, path);
+///////////////////////////////////////////////////////////////////////////////
+
 	safefree((void **)&mask);
 	safefree((void **)&hlines);
 
@@ -310,25 +399,18 @@ static int lintersect(struct lineseg *l1, struct lineseg *l2,
 }
 
 static int getparallel(double *lines1, int lines1count, double *lines2,
-	int lines2count, int *li1, int *li2)
+	int lines2count, int *li1, int *li2, int *pairscount)
 {
-	int minisum;
 	int i1, i2;
-	int minidif;
 
-	minisum = lines1count + lines2count - 2;
-	minidif = (lines1count > lines2count) ? lines1count : lines2count;
-
+	*pairscount = 0;
 	for (i1 = 0; i1 < lines1count; ++i1)
 		for (i2 = 0; i2 < lines2count; ++i2)
-			if (fabs(lines1[i1 * 2] - lines2[i2 * 2]) < MAXANGDIF
-				&& (i1 + i2 < minisum
-				|| (i1 + i2 == minisum
-				&& abs(i2 - i1) < minidif))) {
-				*li1 = i1;
-				*li2 = i2;
-				minisum = i1 + i2;
-				minidif = abs(i2 - i1);
+			if (fabs(lines1[i1 * 2] - lines2[i2 * 2])
+				< MAXANGDIF) {
+				*li1++ = i1;
+				*li2++ = i2;
+				++(*pairscount);
 			}
 
 	return 1;
@@ -353,17 +435,83 @@ int linetoseg(double theta, double rho, int imgw, int imgh,
 	return 0;
 }
 
-int ed_findborder(struct nd_image *img, double inpoints[8])
+int imgdrawlines(struct nd_image *img, double *lines, int *li, int lc)
+{
+	struct lineseg seg;
+	int i;
+
+	for (i = 0; i < lc; ++i) {
+	
+		linetoseg(lines[li[i] * 2], lines[li[i] * 2 + 1],
+			img->w, img->h, &seg);
+		
+		imgdrawline(img, &seg);
+	}
+
+	return 0;
+}
+
+double imgcompare(struct nd_image *img0, struct nd_image *img1)
+{
+	int pixn;
+	double res;
+
+	assert(img0->format == ND_PF_GRAYSCALE
+		&& img1->format == ND_PF_GRAYSCALE);
+
+	res = 0.0;
+	for (pixn = 0; pixn < img0->w * img0->h; ++pixn) {
+		res += fabs(img0->data[pixn] - img1->data[pixn]);
+	}
+
+	return res;
+}
+
+int ed_findborder(struct nd_image *img, struct nd_image *models,
+	int modelcount, double inpoints[8], int *bestmodel)
 {
 	struct nd_image *imgparts;
-	double *lines0;
-	double *lines1;
-	int linescount;
+	double *hlines0;
+	double *hlines1;
+	double *vlines0;
+	double *vlines1;
+	int linescount0;
+	int linescount1;
 	struct lineseg ltop, lbot;
 	struct lineseg lleft, lright;
-	int li1, li2;
+	int *hli0;
+	int *hli1;
+	int hpairscount;
+	int *vli0;
+	int *vli1;
+	int vpairscount;
 
 	assert(img != NULL && inpoints != NULL);
+
+	if ((hlines0 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
+		return (-1);
+
+	if ((hlines1 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
+		return (-1);
+
+	if ((vlines0 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
+		return (-1);
+
+	if ((vlines1 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
+		return (-1);
+
+
+	if ((hli0 = malloc(sizeof(int) * MAXLINES * MAXLINES)) == NULL)
+		return (-1);
+
+	if ((hli1 = malloc(sizeof(int) * MAXLINES * MAXLINES)) == NULL)
+		return (-1);
+
+	if ((vli0 = malloc(sizeof(int) * MAXLINES * MAXLINES)) == NULL)
+		return (-1);
+
+	if ((vli1 = malloc(sizeof(int) * MAXLINES * MAXLINES)) == NULL)
+		return (-1);
 
 // split image into two parts by a horizontal axis
 	if ((imgparts = malloc(sizeof(struct nd_image) * 2)) == NULL)
@@ -371,38 +519,46 @@ int ed_findborder(struct nd_image *img, double inpoints[8])
 
 	if (imghsplit(img, imgparts, 2) < 0)
 		return (-1);
-
-	if ((lines0 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
-		return (-1);
-
-	if ((lines1 = malloc(sizeof(double) * 2 * MAXLINES)) == NULL)
-		return (-1);
-
-	li1 = li2 = 0;
 	
-	linescount = MAXLINES;
-	if (imgfindlines(imgparts + 0, lines0, &linescount, LO_TOP) < 0)
+	linescount0 = MAXLINES;
+	if (imgfindlines(imgparts + 0, hlines0, &linescount0, LO_TOP) < 0)
 		return (-1);
 
-	if (linescount == 0)
+	if (linescount0 == 0)
 		return (-1);
 
-	linescount = MAXLINES;
-	if (imgfindlines(imgparts + 1, lines1, &linescount, LO_BOTTOM) < 0)
+	linescount1 = MAXLINES;
+	if (imgfindlines(imgparts + 1, hlines1, &linescount1, LO_BOTTOM) < 0)
 		return (-1);
 
-	if (linescount == 0)
+	if (linescount1 == 0)
 		return (-1);
 
-	getparallel(lines0, linescount, lines1, linescount, &li1, &li2);
+	getparallel(hlines0, linescount0, hlines1, linescount1, hli0, hli1,
+		&hpairscount);
 
-	linetoseg(lines0[li1 * 2], lines0[li1 * 2 + 1], img->w, img->h, &ltop);
-	linetoseg(lines1[li2 * 2], lines1[li2 * 2 + 1], img->w, img->h, &lbot);
+///////////////////////////////////////////////////////////////////////////////
+/*
+	struct nd_image outimg;
+	nd_imgcopy(imgparts + 0, &outimg);
+	nd_imgtorgb(&outimg);
 
-	lbot.y0 += img->h / 2;
-	lbot.y1 += img->h / 2;
+	imgdrawlines(&outimg, hlines0, hli0, hpairscount);
 
-// split image into four parts by a vertical axis
+	nd_imgwrite(&outimg, "toplines.png");
+
+	nd_imgdestroy(&outimg);
+
+	
+	nd_imgcopy(imgparts + 1, &outimg);
+	nd_imgtorgb(&outimg);
+	
+	imgdrawlines(&outimg, hlines1, hli1, hpairscount);
+	
+	nd_imgwrite(&outimg, "botlines.png");
+*/
+///////////////////////////////////////////////////////////////////////////////
+
 	if ((imgparts = malloc(sizeof(struct nd_image) * 5)) == NULL) {
 		nd_seterrormessage(ND_MSGALLOCERROR, __func__);
 		return (-1);
@@ -411,34 +567,168 @@ int ed_findborder(struct nd_image *img, double inpoints[8])
 	if (imgvsplit(img, imgparts, 5) < 0)
 		return (-1);
 
-	linescount = MAXLINES;
-	if (imgfindlines(imgparts + 0, lines0, &linescount, LO_LEFT) < 0)
+	linescount0 = MAXLINES;
+	if (imgfindlines(imgparts + 0, vlines0, &linescount0, LO_LEFT) < 0)
 		return (-1);
 
-	if (linescount == 0)
+	if (linescount0 == 0)
 		return (-1);
 
-	linescount = MAXLINES;
-	if (imgfindlines(imgparts + 4, lines1, &linescount, LO_RIGHT) < 0)
+	linescount1 = MAXLINES;
+	if (imgfindlines(imgparts + 4, vlines1, &linescount1, LO_RIGHT) < 0)
 		return (-1);
 	
-	if (linescount == 0)
+	if (linescount1 == 0)
 		return (-1);
 
-	getparallel(lines0, linescount, lines1, linescount, &li1, &li2);
+	getparallel(vlines0, linescount0, vlines1, linescount1, vli0, vli1,
+		&vpairscount);
 
-	linetoseg(lines0[li1 * 2], lines0[li1 * 2 + 1],
+///////////////////////////////////////////////////////////////////////////////
+/*
+	nd_imgcopy(imgparts + 0, &outimg);
+	nd_imgtorgb(&outimg);
+
+	imgdrawlines(&outimg, vlines0, vli0, vpairscount);
+
+	nd_imgwrite(&outimg, "leftlines.png");
+
+	nd_imgcopy(imgparts + 4, &outimg);
+	nd_imgtorgb(&outimg);
+	
+	imgdrawlines(&outimg, vlines1, vli1, vpairscount);
+	
+	nd_imgwrite(&outimg, "rightlines.png");
+*/
+///////////////////////////////////////////////////////////////////////////////
+
+//	printf("%d %d\n", vpairscount, hpairscount);
+	
+	double mind;
+	int topi;
+	int boti;
+	int lefti;
+	int righti;
+//	int n;
+	
+	mind = 1000000.0;
+	topi = boti = lefti = righti = 0;
+//	n = 0;
+	
+	int i, j, k;
+	for (i = 0; i < hpairscount; ++i) 
+		for (j = 0; j < vpairscount; ++j) {
+			linetoseg(hlines0[hli0[i] * 2], hlines0[hli0[i] * 2 + 1],
+				img->w, img->h, &ltop);
+			linetoseg(hlines1[hli1[i] * 2], hlines1[hli1[i] * 2 + 1],
+				img->w, img->h, &lbot);
+
+			lbot.y0 += img->h / 2;
+			lbot.y1 += img->h / 2;
+			
+			linetoseg(vlines0[vli0[j] * 2], vlines0[vli0[j] * 2 + 1],
+				img->w, img->h, &lleft);
+			linetoseg(vlines1[vli1[j] * 2], vlines1[vli1[j] * 2 + 1],
+				img->w, img->h, &lright);
+	
+			lright.x0 += 4 * img->w / 5;
+			lright.x1 += 4 * img->w / 5;
+
+
+			
+			double outpoints[8];
+			struct nd_matrix3 m;
+			struct nd_image imgout;
+
+			lintersect(&lleft, &ltop, inpoints + 0, inpoints + 1);
+			lintersect(&lright, &ltop, inpoints + 2, inpoints + 3);
+			lintersect(&lright, &lbot, inpoints + 4, inpoints + 5);
+			lintersect(&lleft, &lbot, inpoints + 6, inpoints + 7);
+
+/*
+			inpoints[0] = ltop.x0; inpoints[1] = ltop.y0; 
+			inpoints[2] = ltop.x1; inpoints[3] = ltop.y1; 
+			inpoints[4] = lbot.x1; inpoints[5] = lbot.y1; 
+			inpoints[6] = lbot.x0; inpoints[7] = lbot.y0; 
+*/
+
+			outpoints[0] = 0.0; outpoints[1] = 0.0;
+			outpoints[2] = img->w; outpoints[3] = 0.0;
+			outpoints[4] = img->w; outpoints[5] = img->h;
+			outpoints[6] = 0.0; outpoints[7] = img->h;
+
+			if (nd_getpersptransform(inpoints, outpoints, &m) < 0) {
+				fprintf(stderr, nd_geterrormessage());
+				return 1;
+			}
+
+			nd_imgcopy(img, &imgout);
+
+			if (nd_imgapplytransform(&imgout, &m, &imgout) < 0) {
+				fprintf(stderr, nd_geterrormessage());
+				return 1;
+			}
+
+/*
+			char path[1024];
+			static int ic = 0;
+
+			sprintf(path, "res/%d.png", ic++);
+			nd_imgwrite(&imgout, path);
+*/
+			double d;
+
+			for (k = 0; k < modelcount; ++k) {
+				nd_imgscalebicubic(&imgout,
+					models[k].w / (double) imgout.w,	
+					models[k].h / (double) imgout.h,
+					&imgout);
+
+				d = imgcompare(models + k, &imgout);
+
+//				printf("%d %f\n", ic - 1, d);
+
+				if (d < mind) {
+					mind = d;
+					*bestmodel = k;
+				//	n = ic - 1;
+					topi = hli0[i];
+					boti = hli1[i];
+					lefti = vli0[j];
+					righti = vli1[j];
+				}
+			}
+		}
+
+//	printf("(%d, %f)\n", n, mind);
+
+	linetoseg(hlines0[topi * 2], hlines0[topi * 2 + 1],
+		img->w, img->h, &ltop);
+	linetoseg(hlines1[boti * 2], hlines1[boti * 2 + 1],
+		img->w, img->h, &lbot);
+
+	lbot.y0 += img->h / 2;
+	lbot.y1 += img->h / 2;
+	
+	linetoseg(vlines0[lefti * 2], vlines0[lefti * 2 + 1],
 		img->w, img->h, &lleft);
-	linetoseg(lines1[li2 * 2], lines1[li2 * 2 + 1],
+	linetoseg(vlines1[righti * 2], vlines1[righti * 2 + 1],
 		img->w, img->h, &lright);
 	
 	lright.x0 += 4 * img->w / 5;
 	lright.x1 += 4 * img->w / 5;
+	
 
 	lintersect(&lleft, &ltop, inpoints + 0, inpoints + 1);
 	lintersect(&lright, &ltop, inpoints + 2, inpoints + 3);
 	lintersect(&lright, &lbot, inpoints + 4, inpoints + 5);
 	lintersect(&lleft, &lbot, inpoints + 6, inpoints + 7);
+
+
+	free(hli0);
+	free(hli1);
+	free(vli0);
+	free(vli1);
 
 	return 0;
 }

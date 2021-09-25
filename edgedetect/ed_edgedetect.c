@@ -3,6 +3,7 @@
 
 #include "ed_edgedetect.h"
 #include "nd_error.h"
+#include "ed_fft.h"
 
 #define HISTSIZE 500
 
@@ -135,6 +136,48 @@ int ed_gaussblur(struct nd_image *img, double sigma)
 	free(ws);
 	free(tmpx);
 	free(tmpy);
+
+	return 0;
+}
+
+int ed_removehorfreq(struct nd_image *img, struct nd_image *imgout)
+{
+	int oldw, oldh;
+
+	oldw = img->w;
+	oldh = img->h;
+
+	nd_imgscalebicubic(img, 256 / (double) oldw,
+		512 / (double) oldh, imgout);
+
+	struct complexd *datac;
+
+	datac = malloc(sizeof(struct complexd) * imgout->w * imgout->h);
+
+	int pixn;
+	for (pixn = 0; pixn < imgout->w * imgout->h; ++pixn) {
+		datac[pixn].real = imgout->data[pixn]
+			* pow(-1.0, pixn / imgout->w + pixn % imgout->w);
+		datac[pixn].imag = 0.0;
+	}
+
+	fft2d(datac, imgout->w, imgout->h, 1);
+
+	for (pixn = 0; pixn < imgout->w * imgout->h; ++pixn) {
+		int x = pixn % imgout->w;
+		if (x >= imgout->w / 2 - 1 && x <= imgout->w + 1)
+			datac[pixn].real = datac[pixn].imag = 0.0;
+	}
+
+	fft2d(datac, imgout->w, imgout->h, -1);
+	
+	for (pixn = 0; pixn < imgout->w * imgout->h; ++pixn) {
+		imgout->data[pixn] = datac[pixn].real
+			* pow(-1.0, pixn / imgout->w + pixn % imgout->w);
+	}
+
+	nd_imgscalebicubic(imgout, oldw / (double) 256,
+		oldh / (double) 512, imgout);
 
 	return 0;
 }
@@ -357,7 +400,27 @@ static int ed_edgenbours(int *res, int resw, int imgy, int imgx)
 		&& res[imgy * resw + (imgx + 1)]);
 }
 
-int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
+static int removehorgrad(double *gradval, double *graddir, int pixcount)
+{
+	int pixn;
+
+	for (pixn = 0; pixn < pixcount; ++pixn) {
+		int sectind;
+		
+		sectind = 4.0 * (graddir[pixn]) / M_PI + 1.0 / 2.0;
+		
+		if (sectind == 4 || sectind == 0 )
+			gradval[pixn] = 0.0;
+	
+		if (sectind == 2 || sectind == 6)
+			gradval[pixn] *= 2.0;
+	}
+
+	return 0;
+}
+
+int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2,
+	int onlyver)
 {
 	double *gradval, *graddir;
 	int imgx, imgy;
@@ -383,6 +446,9 @@ int ed_canny(struct nd_image *img, int *outmask, double thres1, double thres2)
 	
 		return (-1);
 	}
+
+	if (onlyver)
+		removehorgrad(gradval, graddir, img->w * img->h);	
 	
 	for (imgy = 0; imgy < img->h; ++imgy)
 		for (imgx = 0; imgx < img->w; ++imgx)
@@ -531,7 +597,7 @@ int ed_hough(int *img, int imgw, int imgh, double dang,
 				for (ang = 0; ang < arange; ++ang) {
 					double rang = (double) ang * dang;
 
-					d = ceil(imgx * cos(rang)
+					d = round(imgx * cos(rang)
 						+ imgy * sin(rang));
 				
 					d += drange / 2;
